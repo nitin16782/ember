@@ -447,6 +447,37 @@ export const attendanceEditRequests = mysqlTable("attendance_edit_requests", {
 
 export type AttendanceEditRequest = typeof attendanceEditRequests.$inferSelect;
 
+// ─── Module 5d: Attendance audit log ────────────────────────────────
+export const attendanceAuditLog = mysqlTable("attendance_audit_log", {
+  id: uuidPk(),
+  actorUserId: fk("actorUserId").references(() => users.id).notNull(),
+  actorRole: varchar("actorRole", { length: 50 }).notNull(),
+  action: mysqlEnum("attendanceAuditAction", [
+    "mark_event",
+    "mark_event_on_behalf",
+    "request_edit",
+    "approve_edit",
+    "reject_edit",
+    "manual_summary_recompute",
+    "lock_summary",
+  ]).notNull(),
+  targetPersonId: fk("targetPersonId").references(() => people.id),
+  targetEventId: fk("targetEventId").references(() => shiftEvents.id),
+  targetEditRequestId: fk("targetEditRequestId").references(() => attendanceEditRequests.id),
+  targetSummaryId: fk("targetSummaryId").references(() => dailySummaries.id),
+  payload: json("payload"),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  userAgent: varchar("userAgent", { length: 500 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("attendance_audit_actor_idx").on(table.actorUserId, table.createdAt),
+  index("attendance_audit_target_person_idx").on(table.targetPersonId, table.createdAt),
+  index("attendance_audit_action_idx").on(table.action, table.createdAt),
+  index("attendance_audit_created_at_idx").on(table.createdAt),
+]);
+
+export type AttendanceAuditLog = typeof attendanceAuditLog.$inferSelect;
+
 // ─── Module 7: Payroll ──────────────────────────────────────────────
 export const payrollRuns = mysqlTable("payroll_runs", {
   id: uuidPk(),

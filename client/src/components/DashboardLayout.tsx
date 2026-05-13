@@ -39,6 +39,8 @@ type MenuItem = {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   path: string;
+  /** If set, only these roles see this entry. Omitted → visible to all staff. */
+  roles?: string[];
 };
 
 type MenuGroup = {
@@ -46,12 +48,39 @@ type MenuGroup = {
   items: MenuItem[];
 };
 
+const SUPERVISOR_ROLES = [
+  "supervisor",
+  "property_manager",
+  "ops_lead",
+  "central_admin",
+  "super_admin",
+];
+const ADMIN_ROLES = ["property_manager", "ops_lead", "central_admin", "super_admin"];
+const AUDIT_ROLES = ["ops_lead", "central_admin", "super_admin"];
+
 const menuGroups: MenuGroup[] = [
   {
     label: "Overview",
     items: [
       { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-      { icon: Clock, label: "Today's roster", path: "/attendance/today" },
+      {
+        icon: Clock,
+        label: "Today's roster",
+        path: "/attendance/today",
+        roles: SUPERVISOR_ROLES,
+      },
+      {
+        icon: FileBarChart,
+        label: "Attendance overview",
+        path: "/attendance/overview",
+        roles: ADMIN_ROLES,
+      },
+      {
+        icon: Shield,
+        label: "Attendance audit",
+        path: "/attendance/audit",
+        roles: AUDIT_ROLES,
+      },
     ],
   },
   {
@@ -170,6 +199,15 @@ function DashboardLayoutContent({
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+
+  const visibleGroups = menuGroups
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((it) => !it.roles || (user && it.roles.includes(user.role))),
+    }))
+    .filter((g) => g.items.length > 0);
+  const visibleAllItems = visibleGroups.flatMap((g) => g.items);
+
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
     () => {
       const initial: Record<string, boolean> = {};
@@ -180,7 +218,7 @@ function DashboardLayoutContent({
     }
   );
 
-  const activeMenuItem = allMenuItems.find((item) => {
+  const activeMenuItem = visibleAllItems.find((item) => {
     if (item.path === "/") return location === "/";
     return location.startsWith(item.path);
   });
@@ -250,7 +288,7 @@ function DashboardLayoutContent({
           </SidebarHeader>
 
           <SidebarContent className="gap-0 overflow-y-auto">
-            {menuGroups.map((group) => (
+            {visibleGroups.map((group) => (
               <div key={group.label} className="py-1">
                 {!isCollapsed && (
                   <button

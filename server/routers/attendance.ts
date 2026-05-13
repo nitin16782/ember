@@ -1,10 +1,11 @@
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, gte, lte, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, lt, inArray } from "drizzle-orm";
 import { router, protectedProcedure, rolesProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
+  users,
   people,
   properties,
   assignments,
@@ -24,6 +25,14 @@ import {
   type PropertyGeofenceConfig,
   type ShiftEventType,
 } from "../services/attendance";
+import { writeAudit, extractClientInfo } from "../services/attendance/audit";
+import {
+  summariesToCsv,
+  minutesToDecimalHours,
+  formatTimeHHMM,
+  type CsvRow,
+} from "../services/attendance/csv";
+import { attendanceAuditLog } from "../../drizzle/schema";
 
 const MARK_ROLES = [
   "associate",
@@ -291,6 +300,24 @@ const markEvent = rolesProcedure(...MARK_ROLES)
     }
     await db.update(people).set(peopleUpdate as any).where(eq(people.id, person.id));
 
+    const clientInfo = extractClientInfo(ctx.req);
+    await writeAudit({
+      db,
+      actorUserId: ctx.user.id,
+      actorRole: ctx.user.role,
+      action: "mark_event",
+      targetPersonId: person.id,
+      targetEventId: eventId,
+      payload: {
+        eventType: input.eventType,
+        eventAt: eventAt.toISOString(),
+        withinGeofence: geo.withinGeofence,
+        geofenceDistanceMeters: Math.round(geo.distanceMeters),
+      },
+      ipAddress: clientInfo.ipAddress,
+      userAgent: clientInfo.userAgent,
+    });
+
     return {
       id: eventId,
       personId: person.id,
@@ -376,6 +403,23 @@ const markEventOnBehalf = rolesProcedure(...SUPERVISOR_ROLES)
       geofenceDistanceM: null,
       selfieKey: null,
       notes: input.notes,
+    });
+
+    const onBehalfClient = extractClientInfo(ctx.req);
+    await writeAudit({
+      db,
+      actorUserId: ctx.user.id,
+      actorRole: ctx.user.role,
+      action: "mark_event_on_behalf",
+      targetPersonId: target.id,
+      targetEventId: eventId,
+      payload: {
+        eventType: input.eventType,
+        eventAt: eventAt.toISOString(),
+        reason: input.notes,
+      },
+      ipAddress: onBehalfClient.ipAddress,
+      userAgent: onBehalfClient.userAgent,
     });
 
     return {
@@ -751,6 +795,8 @@ const requestEdit = protectedProcedure
     const newEventAt = new Date(input.newEventAt);
     const now = new Date();
 
+    const reqEditClient = extractClientInfo(ctx.req);
+
     if (eventIstDate === todayIst) {
       await db
         .update(shiftEvents)
@@ -762,6 +808,22 @@ const requestEdit = protectedProcedure
           editReason: input.reason,
         })
         .where(eq(shiftEvents.id, event.id));
+      await writeAudit({
+        db,
+        actorUserId: ctx.user.id,
+        actorRole: ctx.user.role,
+        action: "request_edit",
+        targetPersonId: callerPerson.id,
+        targetEventId: event.id,
+        payload: {
+          autoApproved: true,
+          oldEventAt: event.occurredAt.toISOString(),
+          newEventAt: newEventAt.toISOString(),
+          reason: input.reason,
+        },
+        ipAddress: reqEditClient.ipAddress,
+        userAgent: reqEditClient.userAgent,
+      });
       return {
         status: "auto_approved" as const,
         message: "Edit applied immediately (same-day window)",
@@ -777,6 +839,23 @@ const requestEdit = protectedProcedure
         newEventAt,
         reason: input.reason,
         status: "pending",
+      });
+      await writeAudit({
+        db,
+        actorUserId: ctx.user.id,
+        actorRole: ctx.user.role,
+        action: "request_edit",
+        targetPersonId: callerPerson.id,
+        targetEventId: event.id,
+        targetEditRequestId: reqId,
+        payload: {
+          autoApproved: false,
+          oldEventAt: event.occurredAt.toISOString(),
+          newEventAt: newEventAt.toISOString(),
+          reason: input.reason,
+        },
+        ipAddress: reqEditClient.ipAddress,
+        userAgent: reqEditClient.userAgent,
       });
       return {
         status: "pending_supervisor" as const,
@@ -819,10 +898,16 @@ const approveEdit = rolesProcedure(...SUPERVISOR_ROLES)
     }
 
     const now = new Date();
+    const approveClient = extractClientInfo(ctx.req);
+    let approvedEventTargetPersonId: string | null = null;
+    let approvedEventTargetEventId: string | null = null;
 
     if (input.decision === "approve") {
       const [event] = await db.select().from(shiftEvents).where(eq(shiftEvents.id, req.eventId)).limit(1);
       if (!event) throw new TRPCError({ code: "NOT_FOUND", message: "Original event not found" });
+
+      approvedEventTargetPersonId = event.personId;
+      approvedEventTargetEventId = event.id;
 
       await db
         .update(shiftEvents)
@@ -860,6 +945,22 @@ const approveEdit = rolesProcedure(...SUPERVISOR_ROLES)
         })
         .where(eq(attendanceEditRequests.id, req.id));
     }
+
+    await writeAudit({
+      db,
+      actorUserId: ctx.user.id,
+      actorRole: ctx.user.role,
+      action: input.decision === "approve" ? "approve_edit" : "reject_edit",
+      targetPersonId: approvedEventTargetPersonId,
+      targetEventId: approvedEventTargetEventId,
+      targetEditRequestId: req.id,
+      payload: {
+        reviewNote: input.reviewNote ?? null,
+        newEventAt: req.newEventAt.toISOString(),
+      },
+      ipAddress: approveClient.ipAddress,
+      userAgent: approveClient.userAgent,
+    });
 
     return { status: input.decision === "approve" ? "approved" : "rejected" };
   });
@@ -986,6 +1087,523 @@ type PendingEditRow = {
   requestedAt: string;
 };
 
+// ─── Admin: cross-property summaries + CSV export + audit log ───────
+
+const ADMIN_ROLES = [
+  "property_manager",
+  "ops_lead",
+  "central_admin",
+  "super_admin",
+] as const;
+
+const STATUS_VALUES = [
+  "present",
+  "partial",
+  "absent",
+  "leave",
+  "holiday",
+  "weekly_off",
+  "absconding",
+] as const;
+
+const adminFilterSchema = z.object({
+  fromDate: dateString,
+  toDate: dateString,
+  propertyIds: z.array(isoUuid).optional(),
+  statuses: z.array(z.enum(STATUS_VALUES)).optional(),
+  onlyAnomalies: z.boolean().optional(),
+});
+
+const BACKFILL_HARD_CAP = 500;
+const EXPORT_HARD_CAP = 10_000;
+
+interface AdminSummaryRow {
+  id: string | null;
+  personId: string;
+  personName: string;
+  role: string | null;
+  employmentType: string | null;
+  propertyId: string | null;
+  propertyName: string | null;
+  date: string;
+  status: string;
+  totalMinutes: number;
+  breakMinutes: number;
+  netWorkMinutes: number;
+  shiftCount: number;
+  breakCount: number;
+  firstCheckInAt: string | null;
+  lastCheckOutAt: string | null;
+  hasGeofenceViolation: boolean;
+  geofenceViolationCount: number;
+  hasAnomalies: boolean;
+  anomalyCodes: string[];
+}
+
+function isGlobalRole(role: string): boolean {
+  return role === "ops_lead" || role === "central_admin" || role === "super_admin";
+}
+
+async function resolveScopeProperties(
+  callerUserId: string,
+  callerRole: string,
+  requestedIds: string[] | undefined
+): Promise<string[] | null> {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (isGlobalRole(callerRole)) {
+    return requestedIds && requestedIds.length > 0 ? requestedIds : null;
+  }
+
+  const callerPerson = await getPersonByUserId(callerUserId);
+  if (!callerPerson) return [];
+  const assignments_ = await db
+    .select()
+    .from(assignments)
+    .where(and(eq(assignments.personId, callerPerson.id), eq(assignments.status, "active")));
+  const scope = Array.from(new Set(assignments_.map((a) => a.propertyId)));
+  if (!requestedIds || requestedIds.length === 0) return scope;
+  return requestedIds.filter((id) => scope.includes(id));
+}
+
+const adminSummaries = rolesProcedure(...ADMIN_ROLES)
+  .input(
+    adminFilterSchema.extend({
+      limit: z.number().min(1).max(200).default(50),
+      cursor: z.string().optional(),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) {
+      return {
+        rows: [] as AdminSummaryRow[],
+        nextCursor: null as string | null,
+        backfillTruncated: false,
+      };
+    }
+
+    const scope = await resolveScopeProperties(ctx.user.id, ctx.user.role, input.propertyIds);
+    if (scope !== null && scope.length === 0) {
+      return { rows: [], nextCursor: null, backfillTruncated: false };
+    }
+
+    const backfillResult = await backfillSummariesIfMissing({
+      db,
+      fromDate: input.fromDate,
+      toDate: input.toDate,
+      propertyScope: scope,
+      cap: BACKFILL_HARD_CAP,
+    });
+
+    const conditions: any[] = [
+      gte(dailySummaries.date, input.fromDate),
+      lte(dailySummaries.date, input.toDate),
+    ];
+    if (scope !== null && scope.length > 0) {
+      conditions.push(inArray(dailySummaries.propertyId, scope));
+    }
+    if (input.statuses && input.statuses.length > 0) {
+      conditions.push(inArray(dailySummaries.status, input.statuses));
+    }
+    if (input.onlyAnomalies) {
+      conditions.push(eq(dailySummaries.hasAnomalies, true));
+    }
+
+    const rows = await db
+      .select({
+        summary: dailySummaries,
+        person: people,
+        property: properties,
+      })
+      .from(dailySummaries)
+      .innerJoin(people, eq(dailySummaries.personId, people.id))
+      .leftJoin(properties, eq(dailySummaries.propertyId, properties.id))
+      .where(and(...conditions))
+      .orderBy(desc(dailySummaries.date), asc(people.fullName))
+      .limit(input.limit + 1);
+
+    const hasMore = rows.length > input.limit;
+    const sliced = hasMore ? rows.slice(0, input.limit) : rows;
+
+    const shaped: AdminSummaryRow[] = sliced.map((r) => ({
+      id: r.summary.id,
+      personId: r.summary.personId,
+      personName: r.person.fullName,
+      role: null,
+      employmentType: r.person.employmentType ?? null,
+      propertyId: r.summary.propertyId,
+      propertyName: r.property?.name ?? null,
+      date: r.summary.date,
+      status: r.summary.status,
+      totalMinutes: r.summary.totalMinutes,
+      breakMinutes: r.summary.breakMinutes,
+      netWorkMinutes: r.summary.netWorkMinutes,
+      shiftCount: r.summary.shiftCount,
+      breakCount: r.summary.breakCount,
+      firstCheckInAt: r.summary.firstCheckInAt ? r.summary.firstCheckInAt.toISOString() : null,
+      lastCheckOutAt: r.summary.lastCheckOutAt ? r.summary.lastCheckOutAt.toISOString() : null,
+      hasGeofenceViolation: r.summary.hasGeofenceViolation,
+      geofenceViolationCount: r.summary.geofenceViolationCount,
+      hasAnomalies: r.summary.hasAnomalies,
+      anomalyCodes: Array.isArray(r.summary.anomalyCodes)
+        ? (r.summary.anomalyCodes as string[])
+        : [],
+    }));
+
+    return {
+      rows: shaped,
+      nextCursor: hasMore ? shaped[shaped.length - 1].id : null,
+      backfillTruncated: backfillResult.truncated,
+    };
+  });
+
+async function backfillSummariesIfMissing(args: {
+  db: any;
+  fromDate: string;
+  toDate: string;
+  propertyScope: string[] | null;
+  cap: number;
+}): Promise<{ created: number; truncated: boolean }> {
+  const { db, fromDate, toDate, propertyScope, cap } = args;
+
+  const assignmentConditions: any[] = [eq(assignments.status, "active")];
+  if (propertyScope !== null && propertyScope.length > 0) {
+    assignmentConditions.push(inArray(assignments.propertyId, propertyScope));
+  }
+  const activeAssignments = await db
+    .select()
+    .from(assignments)
+    .where(and(...assignmentConditions));
+
+  if (activeAssignments.length === 0) return { created: 0, truncated: false };
+
+  const personPropertyMap = new Map<string, string>();
+  for (const a of activeAssignments) {
+    if (!personPropertyMap.has(a.personId)) {
+      personPropertyMap.set(a.personId, a.propertyId);
+    }
+  }
+  const personIds = Array.from(personPropertyMap.keys());
+
+  const allDates = eachIstDate(fromDate, toDate);
+
+  const existingRows = await db
+    .select({ personId: dailySummaries.personId, date: dailySummaries.date })
+    .from(dailySummaries)
+    .where(
+      and(
+        inArray(dailySummaries.personId, personIds),
+        gte(dailySummaries.date, fromDate),
+        lte(dailySummaries.date, toDate)
+      )
+    );
+  const existing = new Set(existingRows.map((r: any) => `${r.personId}|${r.date}`));
+
+  const missing: Array<{ personId: string; date: string; propertyId: string }> = [];
+  for (const personId of personIds) {
+    const propertyId = personPropertyMap.get(personId)!;
+    for (const date of allDates) {
+      if (!existing.has(`${personId}|${date}`)) {
+        missing.push({ personId, date, propertyId });
+      }
+    }
+  }
+
+  if (missing.length === 0) return { created: 0, truncated: false };
+
+  const truncated = missing.length > cap;
+  const toProcess = missing.slice(0, cap);
+
+  let created = 0;
+  for (const m of toProcess) {
+    try {
+      const { startUtc, endUtc } = istDayBoundsUtc(m.date);
+      const eventsForDay = await getEventsInRange(m.personId, startUtc, endUtc);
+
+      const [personRow] = await db
+        .select()
+        .from(people)
+        .where(eq(people.id, m.personId))
+        .limit(1);
+      if (!personRow) continue;
+
+      const [propRow] = await db
+        .select()
+        .from(properties)
+        .where(eq(properties.id, m.propertyId))
+        .limit(1);
+      const propertyConfig: PropertyGeofenceConfig | null = propRow
+        ? buildGeofenceConfig(propRow)
+        : null;
+
+      const dateAsDate = new Date(`${m.date}T00:00:00Z`);
+      const [leave] = await db
+        .select()
+        .from(leaveApplications)
+        .where(
+          and(
+            eq(leaveApplications.personId, m.personId),
+            eq(leaveApplications.status, "approved"),
+            lte(leaveApplications.fromDate, dateAsDate),
+            gte(leaveApplications.toDate, dateAsDate)
+          )
+        )
+        .limit(1);
+
+      const engineEvents = eventsForDay.map((e: any) =>
+        dbEventToEngineEvent(e, personRow.userId ?? null)
+      );
+
+      const dayOfWeek = new Date(`${m.date}T00:00:00Z`).getUTCDay();
+      const isWeeklyOff = !!propertyConfig?.weeklyOffDays?.includes(dayOfWeek);
+
+      const computed = computeDailySummary({
+        personId: m.personId,
+        date: m.date,
+        events: engineEvents,
+        property: propertyConfig,
+        isOnApprovedLeave: !!leave,
+        leaveApplicationId: leave?.id ?? null,
+        isDeclaredHoliday: false,
+        isWeeklyOff,
+      });
+
+      await db.insert(dailySummaries).values({
+        id: randomUUID(),
+        personId: computed.personId,
+        propertyId: computed.propertyId,
+        date: computed.date,
+        status: (computed.status === "absconding" ? "absent" : computed.status) as any,
+        totalMinutes: computed.totalMinutes,
+        breakMinutes: computed.breakMinutes,
+        netWorkMinutes: computed.netWorkMinutes,
+        shiftCount: computed.shiftCount,
+        breakCount: computed.breakCount,
+        firstCheckInAt: computed.firstCheckInAt,
+        lastCheckOutAt: computed.lastCheckOutAt,
+        hasGeofenceViolation: computed.hasGeofenceViolation,
+        geofenceViolationCount: computed.geofenceViolationCount,
+        hasAnomalies: computed.hasAnomalies,
+        anomalyCodes: computed.anomalyCodes,
+        leaveApplicationId: computed.leaveApplicationId,
+        computedAt: new Date(),
+      });
+      created += 1;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[adminSummaries] backfill failed for", m, err);
+    }
+  }
+
+  return { created, truncated };
+}
+
+function eachIstDate(fromDate: string, toDate: string): string[] {
+  const start = new Date(`${fromDate}T00:00:00Z`).getTime();
+  const end = new Date(`${toDate}T00:00:00Z`).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return [];
+  const days: string[] = [];
+  const MS = 24 * 60 * 60_000;
+  const MAX = 366;
+  for (let i = 0, t = start; t <= end && i < MAX; t += MS, i += 1) {
+    days.push(new Date(t).toISOString().slice(0, 10));
+  }
+  return days;
+}
+
+const exportCsv = rolesProcedure(...ADMIN_ROLES)
+  .input(adminFilterSchema)
+  .mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) {
+      return {
+        csv: summariesToCsv([]),
+        filename: `firebrick-attendance-${input.fromDate}-to-${input.toDate}.csv`,
+        rowCount: 0,
+        truncated: false,
+      };
+    }
+
+    const scope = await resolveScopeProperties(ctx.user.id, ctx.user.role, input.propertyIds);
+    if (scope !== null && scope.length === 0) {
+      return {
+        csv: summariesToCsv([]),
+        filename: `firebrick-attendance-${input.fromDate}-to-${input.toDate}.csv`,
+        rowCount: 0,
+        truncated: false,
+      };
+    }
+
+    await backfillSummariesIfMissing({
+      db,
+      fromDate: input.fromDate,
+      toDate: input.toDate,
+      propertyScope: scope,
+      cap: BACKFILL_HARD_CAP,
+    });
+
+    const conditions: any[] = [
+      gte(dailySummaries.date, input.fromDate),
+      lte(dailySummaries.date, input.toDate),
+    ];
+    if (scope !== null && scope.length > 0) {
+      conditions.push(inArray(dailySummaries.propertyId, scope));
+    }
+    if (input.statuses && input.statuses.length > 0) {
+      conditions.push(inArray(dailySummaries.status, input.statuses));
+    }
+    if (input.onlyAnomalies) {
+      conditions.push(eq(dailySummaries.hasAnomalies, true));
+    }
+
+    const rows = await db
+      .select({
+        summary: dailySummaries,
+        person: people,
+        property: properties,
+      })
+      .from(dailySummaries)
+      .innerJoin(people, eq(dailySummaries.personId, people.id))
+      .leftJoin(properties, eq(dailySummaries.propertyId, properties.id))
+      .where(and(...conditions))
+      .orderBy(desc(dailySummaries.date), asc(people.fullName))
+      .limit(EXPORT_HARD_CAP + 1);
+
+    const truncated = rows.length > EXPORT_HARD_CAP;
+    const exportRows = truncated ? rows.slice(0, EXPORT_HARD_CAP) : rows;
+
+    const csvRows: CsvRow[] = exportRows.map((r: any) => {
+      const anomalyList = Array.isArray(r.summary.anomalyCodes)
+        ? (r.summary.anomalyCodes as string[]).join("; ")
+        : "";
+      return {
+        personName: r.person.fullName,
+        employeeId: r.person.id,
+        role: r.person.staffType ?? "",
+        propertyName: r.property?.name ?? "",
+        date: r.summary.date,
+        status: r.summary.status,
+        firstCheckIn: r.summary.firstCheckInAt ? formatTimeHHMM(r.summary.firstCheckInAt) : "",
+        lastCheckOut: r.summary.lastCheckOutAt ? formatTimeHHMM(r.summary.lastCheckOutAt) : "",
+        totalHours: minutesToDecimalHours(r.summary.totalMinutes),
+        breakHours: minutesToDecimalHours(r.summary.breakMinutes),
+        netWorkHours: minutesToDecimalHours(r.summary.netWorkMinutes),
+        anomalies: anomalyList,
+        geofenceViolations: r.summary.geofenceViolationCount,
+        editedEvents: 0,
+        markedOnBehalfEvents: 0,
+      };
+    });
+
+    const csv = summariesToCsv(csvRows);
+
+    return {
+      csv,
+      filename: `firebrick-attendance-${input.fromDate}-to-${input.toDate}.csv`,
+      rowCount: csvRows.length,
+      truncated,
+    };
+  });
+
+const AUDIT_ROLES = ["ops_lead", "central_admin", "super_admin"] as const;
+
+const auditLogQuery = rolesProcedure(...AUDIT_ROLES)
+  .input(
+    z.object({
+      fromDate: dateString,
+      toDate: dateString,
+      actorUserId: isoUuid.optional(),
+      action: z
+        .enum([
+          "mark_event",
+          "mark_event_on_behalf",
+          "request_edit",
+          "approve_edit",
+          "reject_edit",
+          "manual_summary_recompute",
+          "lock_summary",
+        ])
+        .optional(),
+      targetPersonId: isoUuid.optional(),
+      limit: z.number().min(1).max(200).default(100),
+      cursor: z.string().optional(),
+    })
+  )
+  .query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) {
+      return { entries: [] as AuditEntryRow[], nextCursor: null as string | null };
+    }
+
+    const fromTs = new Date(`${input.fromDate}T00:00:00Z`);
+    const toTs = new Date(`${input.toDate}T23:59:59Z`);
+
+    const conditions: any[] = [
+      gte(attendanceAuditLog.createdAt, fromTs),
+      lte(attendanceAuditLog.createdAt, toTs),
+    ];
+    if (input.actorUserId) conditions.push(eq(attendanceAuditLog.actorUserId, input.actorUserId));
+    if (input.action) conditions.push(eq(attendanceAuditLog.action, input.action));
+    if (input.targetPersonId) {
+      conditions.push(eq(attendanceAuditLog.targetPersonId, input.targetPersonId));
+    }
+
+    const rows = await db
+      .select({
+        audit: attendanceAuditLog,
+        actor: users,
+        target: people,
+      })
+      .from(attendanceAuditLog)
+      .innerJoin(users, eq(attendanceAuditLog.actorUserId, users.id))
+      .leftJoin(people, eq(attendanceAuditLog.targetPersonId, people.id))
+      .where(and(...conditions))
+      .orderBy(desc(attendanceAuditLog.createdAt))
+      .limit(input.limit + 1);
+
+    const hasMore = rows.length > input.limit;
+    const sliced = hasMore ? rows.slice(0, input.limit) : rows;
+
+    const entries: AuditEntryRow[] = sliced.map((r: any) => ({
+      id: r.audit.id,
+      actorUserId: r.audit.actorUserId,
+      actorName: r.actor.name ?? r.actor.email,
+      actorRole: r.audit.actorRole,
+      action: r.audit.action,
+      targetPersonId: r.audit.targetPersonId,
+      targetPersonName: r.target?.fullName ?? null,
+      targetEventId: r.audit.targetEventId,
+      targetEditRequestId: r.audit.targetEditRequestId,
+      payload: r.audit.payload,
+      ipAddress: r.audit.ipAddress,
+      userAgent: r.audit.userAgent,
+      createdAt: r.audit.createdAt.toISOString(),
+    }));
+
+    return {
+      entries,
+      nextCursor: hasMore ? entries[entries.length - 1].id : null,
+    };
+  });
+
+type AuditEntryRow = {
+  id: string;
+  actorUserId: string;
+  actorName: string | null;
+  actorRole: string;
+  action: string;
+  targetPersonId: string | null;
+  targetPersonName: string | null;
+  targetEventId: string | null;
+  targetEditRequestId: string | null;
+  payload: unknown;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+};
+
 const legacyList = protectedProcedure
   .input(
     z
@@ -1022,5 +1640,8 @@ export const attendanceRouter = router({
   approveEdit,
   pendingEditRequests,
   recentEvents,
+  adminSummaries,
+  exportCsv,
+  auditLog: auditLogQuery,
   list: legacyList,
 });
