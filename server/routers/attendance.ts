@@ -640,6 +640,7 @@ const myStatus = protectedProcedure.query(async ({ ctx }) => {
   const db = await getDb();
   if (!db) {
     return {
+      personId: null as string | null,
       personName: ctx.user.name ?? null,
       propertyName: null,
       propertyId: null,
@@ -658,6 +659,7 @@ const myStatus = protectedProcedure.query(async ({ ctx }) => {
   const person = await getPersonByUserId(ctx.user.id);
   if (!person) {
     return {
+      personId: null as string | null,
       personName: ctx.user.name ?? null,
       propertyName: null,
       propertyId: null,
@@ -703,6 +705,7 @@ const myStatus = protectedProcedure.query(async ({ ctx }) => {
     state.isCheckedIn && state.isOnBreak ? "on_break" : state.isCheckedIn ? "on_shift" : "off";
 
   return {
+    personId: person.id as string | null,
     personName: person.fullName,
     propertyName,
     propertyId,
