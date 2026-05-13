@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, FileSignature, Plus, Clock, CheckCircle2, XCircle, Send } from "lucide-react";
+import { FileText, FileSignature, Plus, Clock, CheckCircle2, XCircle, Send, Download } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -28,6 +28,10 @@ export default function Contracts() {
   const utils = trpc.useUtils();
   const createContract = trpc.contracts.create.useMutation({
     onSuccess: () => { utils.contracts.list.invalidate(); setDialogOpen(false); setForm({ personId: "", contractType: "employment", templateId: "", startDate: "", endDate: "" }); toast.success("Contract created"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const generateDoc = trpc.contracts.generate.useMutation({
+    onSuccess: (data) => { utils.contracts.list.invalidate(); toast.success("Document generated"); if (data.documentUrl) window.open(data.documentUrl, "_blank"); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -110,7 +114,14 @@ export default function Contracts() {
                       <p className="text-xs text-muted-foreground mt-0.5">Start: {c.startDate}{c.endDate ? ` · End: ${c.endDate}` : ""} · Created {String(c.createdAt).slice(0, 10)}</p>
                     </div>
                   </div>
-                  <Badge className={config.color}><Icon className="h-3 w-3 mr-1" />{config.label}</Badge>
+                  <div className="flex items-center gap-2">
+                    {c.templateId && c.status === "draft" && (
+                      <Button size="sm" variant="outline" className="text-xs border-gold/30 text-gold hover:bg-gold/10" onClick={(e) => { e.stopPropagation(); generateDoc.mutate({ contractId: c.id, templateId: c.templateId }); }} disabled={generateDoc.isPending}>
+                        <Download className="h-3 w-3 mr-1" />{generateDoc.isPending ? "Generating..." : "Generate Doc"}
+                      </Button>
+                    )}
+                    <Badge className={config.color}><Icon className="h-3 w-3 mr-1" />{config.label}</Badge>
+                  </div>
                 </CardContent>
               </Card>
             );

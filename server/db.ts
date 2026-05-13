@@ -693,6 +693,13 @@ export async function listContracts(opts?: { personId?: number; status?: string;
   return filtered.orderBy(desc(contracts.createdAt)).limit(opts?.limit ?? 50);
 }
 
+export async function getContractById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(contracts).where(eq(contracts.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
 export async function createContract(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -865,4 +872,95 @@ export async function createSla(data: any) {
   if (!db) throw new Error("DB not available");
   const result = await db.insert(slas).values(data);
   return result[0].insertId;
+}
+
+// ─── Anomaly Detection ────────────────────────────────────────────
+export async function getAnomalyData() {
+  const db = await getDb();
+  if (!db) return {
+    attendanceAnomalies: { noCheckIn3Days: 0, lateCheckIns: 0, missedCheckOuts: 0 },
+    financialAnomalies: { overdueInvoices: 0, unusualExpenses: 0, pendingReconciliation: 0 },
+    operationalAnomalies: { coverageGaps: 0, overdueChecklists: 0, lowInventory: 0 },
+  };
+
+  const now = new Date();
+  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // Attendance: people with no check-in in 3+ days (active staff)
+  const activePeople = await db.select({ id: people.id }).from(people)
+    .where(eq(people.employmentStatus, "active"));
+  const recentAttendance = await db.select({ personId: shiftEvents.personId })
+    .from(shiftEvents)
+    .where(gte(shiftEvents.occurredAt, threeDaysAgo));
+  const recentPersonIds = new Set(recentAttendance.map(a => a.personId));
+  const noCheckIn3Days = activePeople.filter(p => !recentPersonIds.has(p.id)).length;
+
+  // Attendance: missed check-outs (check_in without check_out in last 7 days)
+  const recentCheckIns = await db.select({ shiftSessionId: shiftEvents.shiftSessionId, eventType: shiftEvents.eventType })
+    .from(shiftEvents)
+    .where(and(gte(shiftEvents.occurredAt, sevenDaysAgo)));
+  const sessionMap = new Map<string, Set<string>>();
+  for (const e of recentCheckIns) {
+    if (!e.shiftSessionId) continue;
+    if (!sessionMap.has(e.shiftSessionId)) sessionMap.set(e.shiftSessionId, new Set());
+    sessionMap.get(e.shiftSessionId)!.add(e.eventType);
+  }
+  let missedCheckOuts = 0;
+  Array.from(sessionMap.values()).forEach(events => {
+    if (events.has("check_in") && !events.has("check_out")) missedCheckOuts++;
+  });
+
+  // Financial: overdue invoices
+  const overdueInvoices = await db.select({ id: invoices.id }).from(invoices)
+    .where(eq(invoices.status, "overdue"));
+
+  // Financial: pending reconciliation (expenses in captured status)
+  const pendingExpenses = await db.select({ id: expenses.id }).from(expenses)
+    .where(eq(expenses.status, "captured"));
+
+  // Operational: overdue checklists (pending status older than today)
+  const overdueChecklists = await db.select({ id: dailyChecklists.id }).from(dailyChecklists)
+    .where(eq(dailyChecklists.status, "pending"));
+
+  // Operational: low inventory (quantity <= 2)
+  const lowInventory = await db.select({ id: inventoryItems.id }).from(inventoryItems)
+    .where(lte(inventoryItems.quantity, 2));
+
+  // Operational: coverage gaps — properties with no active assignment
+  const allProperties = await db.select({ id: properties.id }).from(properties)
+    .where(eq(properties.status, "live"));
+  const activeAssignments = await db.select({ propertyId: assignments.propertyId }).from(assignments)
+    .where(eq(assignments.status, "active"));
+  const assignedPropertyIds = new Set(activeAssignments.map(a => a.propertyId));
+  const coverageGaps = allProperties.filter(p => !assignedPropertyIds.has(p.id)).length;
+
+  // Financial: unusual expenses — expenses above 2x average in last 30 days
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const recentExpenses = await db.select({ amount: expenses.amount }).from(expenses)
+    .where(gte(expenses.createdAt, thirtyDaysAgo));
+  let unusualExpenses = 0;
+  if (recentExpenses.length > 2) {
+    const amounts = recentExpenses.map(e => parseFloat(String(e.amount ?? "0")));
+    const avg = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+    unusualExpenses = amounts.filter(a => a > avg * 2).length;
+  }
+
+  return {
+    attendanceAnomalies: {
+      noCheckIn3Days,
+      lateCheckIns: 0, // requires shift schedule comparison — not yet modeled
+      missedCheckOuts,
+    },
+    financialAnomalies: {
+      overdueInvoices: overdueInvoices.length,
+      unusualExpenses,
+      pendingReconciliation: pendingExpenses.length,
+    },
+    operationalAnomalies: {
+      coverageGaps,
+      overdueChecklists: overdueChecklists.length,
+      lowInventory: lowInventory.length,
+    },
+  };
 }

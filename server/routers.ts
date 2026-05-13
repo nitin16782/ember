@@ -4,6 +4,9 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
+import { mergeTemplate, wrapContractHtml, buildMergeValues, storeContractDocument } from "./services/contractMerge";
+import { calculateFnF, type FnFInput } from "./services/settlement";
+import { uploadModuleFile, validateUpload, type MediaModule } from "./services/media";
 
 export const appRouter = router({
   system: systemRouter,
@@ -627,6 +630,27 @@ export const appRouter = router({
         return { id };
       }),
     templates: protectedProcedure.query(async () => db.listContractTemplates()),
+    generate: protectedProcedure
+      .input(z.object({
+        contractId: z.number(),
+        templateId: z.number(),
+        mergeValues: z.record(z.string(), z.string()).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const contract = await db.getContractById(input.contractId);
+        if (!contract) throw new Error("Contract not found");
+        const templates = await db.listContractTemplates();
+        const template = templates.find((t: any) => t.id === input.templateId);
+        if (!template) throw new Error("Template not found");
+        const person = await db.getPersonById(contract.personId);
+        if (!person) throw new Error("Person not found");
+        const mergeVals = input.mergeValues || buildMergeValues(person, { startDate: contract.effectiveFrom ? String(contract.effectiveFrom) : undefined, endDate: contract.effectiveTo ? String(contract.effectiveTo) : undefined });
+        const bodyHtml = mergeTemplate(template.templateHtml || "<p>No template content</p>", mergeVals);
+        const fullHtml = wrapContractHtml(bodyHtml, `${template.label} - ${person.fullName}`);
+        const stored = await storeContractDocument(input.contractId, fullHtml, `${template.code}-${person.fullName.replace(/\s+/g, "_")}.html`);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "generate", entityType: "contract", entityId: input.contractId, afterValue: { templateId: input.templateId, documentUrl: stored.url } });
+        return { documentUrl: stored.url };
+      }),
     createTemplate: protectedProcedure
       .input(z.object({ name: z.string().min(1), contractType: z.string(), bodyHtml: z.string().optional(), variables: z.unknown().optional() }))
       .mutation(async ({ input, ctx }) => {
@@ -711,9 +735,10 @@ export const appRouter = router({
         attributedTo: z.number().optional(),
         attributionStatus: z.enum(["unattributed", "associate", "guest", "accidental", "wear"]).optional(),
         estimatedCost: z.string().optional(),
+        photoUrls: z.array(z.string()).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const id = await db.createBreakage(input);
+        const id = await db.createBreakage({ ...input, photoUrls: input.photoUrls ?? [] });
         await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "breakage", entityId: id, afterValue: input });
         return { id };
       }),
@@ -771,6 +796,58 @@ export const appRouter = router({
         await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "request", entityId: id, afterValue: input });
         return { id };
       }),
+  }),
+
+  // ─── Settlement (F&F) ────────────────────────────────────────────
+  settlement: router({
+    calculate: protectedProcedure
+      .input(z.object({
+        monthlySalary: z.number(),
+        dailyRate: z.number().optional(),
+        lastWorkingDay: z.string(),
+        salaryPaidThrough: z.string(),
+        unusedLeaveDays: z.number(),
+        leaveEncashable: z.boolean(),
+        noticePeriodDays: z.number(),
+        noticePeriodServed: z.number(),
+        salaryAdvanceOutstanding: z.number(),
+        breakageDeductions: z.number(),
+        bonusAmount: z.number(),
+        gratuityAmount: z.number(),
+        otherDeductions: z.number(),
+        otherEarnings: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        return calculateFnF(input as FnFInput);
+      }),
+  }),
+
+  // ─── File Upload ────────────────────────────────────────────────
+  upload: router({
+    file: protectedProcedure
+      .input(z.object({
+        module: z.enum(["attendance", "expenses", "breakages", "contracts", "idcards", "properties", "dailyops", "people"]),
+        entityId: z.string(),
+        filename: z.string(),
+        data: z.string(), // base64 encoded
+        mimeType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.data, "base64");
+        const validationError = validateUpload(buffer, input.mimeType);
+        if (validationError) throw new Error(validationError);
+        const result = await uploadModuleFile(input.module as MediaModule, input.entityId, input.filename, buffer, input.mimeType);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "upload", entityType: input.module, entityId: parseInt(input.entityId) || 0, afterValue: { filename: input.filename, url: result.url } });
+        return result;
+      }),
+  }),
+
+  // ─── Anomaly Detection ─────────────────────────────────────────
+  anomalies: router({
+    dashboard: protectedProcedure.query(async () => {
+      const anomalyData = await db.getAnomalyData();
+      return anomalyData;
+    }),
   }),
 
   // ─── Audit Log ──────────────────────────────────────────────────

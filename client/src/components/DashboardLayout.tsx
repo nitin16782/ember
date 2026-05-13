@@ -27,7 +27,7 @@ import {
   CreditCard, UserPlus, Building2, CalendarDays, ListChecks,
   Receipt, Store, Package, CalendarRange, FileBarChart,
   DollarSign, Bell, Shield, Settings, LogOut, PanelLeft,
-  ChevronDown, ChevronRight, Flame,
+  ChevronDown, ChevronRight, Flame, AlertTriangle,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -91,6 +91,7 @@ const menuGroups: MenuGroup[] = [
   {
     label: "System",
     items: [
+      { icon: AlertTriangle, label: "Anomalies", path: "/anomalies" },
       { icon: Bell, label: "Notifications", path: "/notifications" },
       { icon: Shield, label: "Audit Log", path: "/audit-log" },
       { icon: Settings, label: "Settings", path: "/settings" },

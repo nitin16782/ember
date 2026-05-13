@@ -5,8 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
-import { ClipboardList, CheckCircle2, Circle, Camera, Clock, AlertTriangle, List, LayoutTemplate } from "lucide-react";
-import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ClipboardList, CheckCircle2, Circle, Camera, Clock, AlertTriangle, List, LayoutTemplate, Hammer, Upload, Image as ImageIcon, Plus } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 const checklistTemplates = [
@@ -41,8 +44,120 @@ const checklistTemplates = [
   },
 ];
 
+function BreakageReportDialog() {
+  const [open, setOpen] = useState(false);
+  const [description, setDescription] = useState("");
+  const [attribution, setAttribution] = useState<string>("unattributed");
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const createBreakage = trpc.breakages.create.useMutation();
+  const uploadFile = trpc.upload.file.useMutation();
+  const utils = trpc.useUtils();
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error("File must be under 5MB"); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setPhotoPreview(result);
+      setPhotoBase64(result.split(",")[1]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = async () => {
+    if (!description.trim()) { toast.error("Description is required"); return; }
+    setUploading(true);
+    try {
+      let uploadedPhotoUrls: string[] = [];
+      if (photoBase64) {
+        const uploaded = await uploadFile.mutateAsync({
+          module: "breakages",
+          entityId: String(Date.now()),
+          filename: `breakage-${Date.now()}.jpg`,
+          data: photoBase64,
+          mimeType: "image/jpeg",
+        });
+        uploadedPhotoUrls = [uploaded.url];
+      }
+      await createBreakage.mutateAsync({
+        propertyId: 1,
+        description,
+        attributionStatus: attribution as any,
+        photoUrls: uploadedPhotoUrls,
+      });
+      toast.success("Breakage report submitted");
+      setOpen(false);
+      setDescription("");
+      setPhotoPreview(null);
+      setPhotoBase64(null);
+      setAttribution("unattributed");
+      utils.breakages.list.invalidate();
+    } catch {
+      toast.error("Failed to submit breakage report");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="bg-navy text-white hover:bg-navy/90"><Plus className="h-4 w-4 mr-1.5" />Report Breakage</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle className="font-display text-navy">Report Breakage</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Description</label>
+            <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe the breakage..." />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Attribution</label>
+            <Select value={attribution} onValueChange={setAttribution}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unattributed">Unattributed</SelectItem>
+                <SelectItem value="associate">Associate</SelectItem>
+                <SelectItem value="guest">Guest</SelectItem>
+                <SelectItem value="accidental">Accidental</SelectItem>
+                <SelectItem value="wear">Wear & Tear</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Photo Evidence</label>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+            {photoPreview ? (
+              <div className="relative rounded-lg overflow-hidden border border-border/50">
+                <img src={photoPreview} alt="Breakage" className="w-full h-40 object-cover" />
+                <Button size="sm" variant="outline" className="absolute top-2 right-2 h-7 text-xs bg-white/80" onClick={() => { setPhotoPreview(null); setPhotoBase64(null); }}>Remove</Button>
+              </div>
+            ) : (
+              <Button variant="outline" className="w-full h-24 border-dashed" onClick={() => fileRef.current?.click()}>
+                <div className="text-center">
+                  <Camera className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+                  <span className="text-xs text-muted-foreground">Click to upload photo</span>
+                </div>
+              </Button>
+            )}
+          </div>
+          <Button className="w-full bg-navy text-white hover:bg-navy/90" onClick={handleSubmit} disabled={uploading}>
+            {uploading ? "Uploading..." : "Submit Report"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function DailyOps() {
   const { data: entries, isLoading } = trpc.dailyOps.checklists.useQuery({});
+  const { data: breakages } = trpc.breakages.list.useQuery({});
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const [activeTemplate, setActiveTemplate] = useState(checklistTemplates[0]);
 
@@ -57,21 +172,26 @@ export default function DailyOps() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="font-display text-xl font-semibold text-navy">Daily Operations</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Checklists, task logs, and daily property operations</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-xl font-semibold text-navy">Daily Operations</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Checklists, breakage reports, and daily property operations</p>
+        </div>
+        <BreakageReportDialog />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Today's Checklists</p><p className="text-2xl font-semibold text-navy mt-1">{entries?.length ?? 0}</p></CardContent></Card>
         <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Completed</p><p className="text-2xl font-semibold text-green-600 mt-1">{entries?.filter((e: any) => e.status === "reviewed" || e.status === "submitted").length ?? 0}</p></CardContent></Card>
         <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Flagged</p><p className="text-2xl font-semibold text-red-600 mt-1">{entries?.filter((e: any) => e.status === "flagged").length ?? 0}</p></CardContent></Card>
+        <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Breakages</p><p className="text-2xl font-semibold text-orange-600 mt-1">{breakages?.length ?? 0}</p></CardContent></Card>
         <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Templates</p><p className="text-2xl font-semibold text-gold mt-1">{checklistTemplates.length}</p></CardContent></Card>
       </div>
 
       <Tabs defaultValue="active" className="space-y-4">
         <TabsList className="bg-cream border border-border/50">
           <TabsTrigger value="active"><ClipboardList className="h-4 w-4 mr-1.5" />Active Checklist</TabsTrigger>
+          <TabsTrigger value="breakages"><Hammer className="h-4 w-4 mr-1.5" />Breakages</TabsTrigger>
           <TabsTrigger value="history"><List className="h-4 w-4 mr-1.5" />History</TabsTrigger>
           <TabsTrigger value="templates"><LayoutTemplate className="h-4 w-4 mr-1.5" />Templates</TabsTrigger>
         </TabsList>
@@ -106,7 +226,6 @@ export default function DailyOps() {
                       <Checkbox checked={!!checkedItems[item.id]} onCheckedChange={() => toggleItem(item.id)} />
                       <span className={`text-sm flex-1 ${checkedItems[item.id] ? "line-through text-muted-foreground" : ""}`}>{item.label}</span>
                       {item.required && <Badge variant="outline" className="text-[9px] h-4 border-red-200 text-red-500">Required</Badge>}
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => toast.info("Photo capture coming soon")}><Camera className="h-3.5 w-3.5 text-muted-foreground" /></Button>
                     </div>
                   ))}
                   <div className="pt-3 flex gap-2">
@@ -121,6 +240,40 @@ export default function DailyOps() {
               </Card>
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="breakages" className="space-y-3">
+          {breakages?.map((b: any) => (
+            <Card key={b.id} className="border-border/50">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-4">
+                  <div className="h-10 w-10 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                    {b.photoUrl ? <ImageIcon className="h-5 w-5 text-orange-600" /> : <Hammer className="h-5 w-5 text-orange-600" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{b.description}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="outline" className="text-[10px]">Property #{b.propertyId}</Badge>
+                      <Badge className={
+                        b.attributionStatus === "associate" ? "bg-red-100 text-red-700" :
+                        b.attributionStatus === "guest" ? "bg-blue-100 text-blue-700" :
+                        b.attributionStatus === "accidental" ? "bg-yellow-100 text-yellow-700" :
+                        b.attributionStatus === "wear" ? "bg-gray-100 text-gray-700" :
+                        "bg-orange-100 text-orange-700"
+                      }>{b.attributionStatus}</Badge>
+                      <span className="text-xs text-muted-foreground">{new Date(b.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  {b.photoUrls && Array.isArray(b.photoUrls) && (b.photoUrls as string[]).length > 0 && (
+                    <img src={(b.photoUrls as string[])[0]} alt="Breakage" className="h-16 w-16 rounded-lg object-cover border border-border/30" />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {(!breakages || breakages.length === 0) && (
+            <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><Hammer className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" /><p className="text-sm text-muted-foreground">No breakage reports yet</p></CardContent></Card>
+          )}
         </TabsContent>
 
         <TabsContent value="history" className="space-y-2">

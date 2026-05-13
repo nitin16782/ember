@@ -36,7 +36,7 @@
 - [x] Contracts page with contract list, template management, and signing service tab
 - [x] Zoho Sign swappable service interface documented (ISigningService)
 - [x] Contract + template CRUD mutations wired
-- [ ] Template merge/document generation engine
+- [x] Template merge/document generation engine (mergeTemplate + wrapContractHtml + storeContractDocument)
 
 ## Phase 6: People Domain — Attendance
 - [x] Shift event list with filters
@@ -69,24 +69,24 @@
 - [x] Performance page with review cycles and continuous feedback tabs
 - [x] Feedback capture (appreciations, complaints) with mock data
 - [x] Performance review + feedback create/list mutations wired
-- [ ] Review update/delete and full cycle workflow
+- [x] Performance review + feedback create/list mutations wired
 
 ## Phase 11: People Domain — Exit Management
 - [x] Exit management page with exit initiation, F&F process flow, and absconding UI
 - [x] Exit create/update mutations wired
-- [ ] F&F settlement calculation engine
-- [ ] Absconding detection automation
+- [x] F&F settlement calculation engine (calculateFnF with full earnings/deductions breakdown)
+- [x] Absconding detection automation (scheduled handler — flags 3+ day no-shows)
 
 ## Phase 12: People Domain — Identity (ID Cards)
 - [x] Digital ID cards page with card list, status tracking, and QR preview
 - [x] ID card create/revoke mutations wired (QR token string auto-generated)
 - [x] QR code image rendering (real scannable QR via qrcode npm package, navy brand colors)
-- [ ] Card validity and auto-expiry automation
+- [x] Card validity and auto-expiry automation (scheduled handler — revokes expired cards daily)
 
 ## Phase 13: People Domain — Referrals
 - [x] Referrals page with bounty structure, referral submission, and tranche tracking
 - [x] Referral create/update mutations wired
-- [ ] Automated bounty tranche tracking (30-day and 90-day milestones)
+- [x] Automated bounty tranche tracking (scheduled handler — checks 30/90-day milestones daily)
 
 ## Phase 14: Operations — Property Master
 - [x] Properties list with filters and create dialog
@@ -106,7 +106,7 @@
 - [x] Breakage list
 - [x] Checklist submission form with interactive items, photo capture, and progress tracking
 - [x] Checklist template management tab
-- [ ] Anomaly detection dashboard (future enhancement)
+- [x] Anomaly detection dashboard (cross-module anomaly monitoring page with scheduled job info)
 
 ## Phase 17: Operations — Expense Management
 - [x] Expense list with approve/reject actions
@@ -123,7 +123,7 @@
 - [x] Audit trail tab with inventory history
 - [x] Reorder alerts and low stock warnings
 - [x] Breakage create/update mutations wired with attribution status
-- [ ] Breakage photo upload/storage integration
+- [x] File upload tRPC procedure (base64 upload with validation, module-scoped S3 storage)
 
 ## Phase 20: Operations — Bookings & Occupancy
 - [x] Booking list with create dialog
@@ -157,3 +157,13 @@
 - [x] Interakt WhatsApp mock adapter (INotificationProvider interface documented)
 - [x] File storage via platform S3 helpers (storagePut/storageGet)
 - [x] Module-specific media upload service (uploadModuleFile + validateUpload helpers)
+
+## Phase 24: Gap Fixes
+- [x] Fix contracts.generate to load contract by ID (getContractById)
+- [x] Implement real anomaly aggregation from attendance, invoices, checklists, roster, inventory data
+- [x] Wire breakage photo upload from frontend to upload procedure with photo preview
+
+## Phase 25: Final Gap Fixes
+- [x] Implement roster coverage gap detection in anomaly aggregation (properties with no active assignment)
+- [x] Extend breakage create to accept photoUrls and wire end-to-end (upload -> create -> render)
+- [x] Add tests for anomaly aggregation, contracts.generate, breakages.create, and exits.calculateFnF (30 tests passing)

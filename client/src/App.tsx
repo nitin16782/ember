@@ -37,6 +37,7 @@ const Notifications = lazy(() => import("./pages/Notifications"));
 const AuditLog = lazy(() => import("./pages/AuditLog"));
 const Settings = lazy(() => import("./pages/Settings"));
 const OwnerPortal = lazy(() => import("./pages/OwnerPortal"));
+const Anomalies = lazy(() => import("./pages/Anomalies"));
 
 function PageLoader() {
   return (
@@ -83,6 +84,7 @@ function Router() {
           <Route path="/invoices" component={Invoices} />
           <Route path="/payments" component={Payments} />
           <Route path="/notifications" component={Notifications} />
+          <Route path="/anomalies" component={Anomalies} />
           <Route path="/audit-log" component={AuditLog} />
           <Route path="/settings" component={Settings} />
           <Route path="/404" component={NotFound} />
