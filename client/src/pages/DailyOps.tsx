@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useUploadFile } from "@/hooks/useUploadFile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,61 +49,71 @@ function BreakageReportDialog() {
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [attribution, setAttribution] = useState<string>("unattributed");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const createBreakage = trpc.breakages.create.useMutation();
-  const uploadFile = trpc.upload.file.useMutation();
+  const updateBreakage = trpc.breakages.update.useMutation();
+  const { upload, uploading } = useUploadFile();
   const utils = trpc.useUtils();
+
+  // R2 migration (Prompt 6): the old flow base64-encoded the photo and
+  // sent it through the server. Now we:
+  //   1. Create the breakage row first (so we have its UUID)
+  //   2. Request a signed PUT URL keyed on that breakageId
+  //   3. PUT the file directly to R2 from the browser
+  //   4. Patch the breakage row with the storage key
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) { toast.error("File must be under 5MB"); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setPhotoPreview(result);
-      setPhotoBase64(result.split(",")[1]);
-    };
-    reader.readAsDataURL(file);
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
   };
 
   const handleSubmit = async () => {
     if (!description.trim()) { toast.error("Description is required"); return; }
-    setUploading(true);
+    const propertyId = "00000000-0000-0000-0000-000000000001";
+    setSubmitting(true);
     try {
-      let uploadedPhotoUrls: string[] = [];
-      if (photoBase64) {
-        const uploaded = await uploadFile.mutateAsync({
-          module: "breakages",
-          entityId: String(Date.now()),
-          filename: `breakage-${Date.now()}.jpg`,
-          data: photoBase64,
-          mimeType: "image/jpeg",
-        });
-        uploadedPhotoUrls = [uploaded.url];
-      }
-      await createBreakage.mutateAsync({
-        propertyId: "00000000-0000-0000-0000-000000000001",
+      const { id: breakageId } = await createBreakage.mutateAsync({
+        propertyId,
         description,
         attributionStatus: attribution as any,
-        photoUrls: uploadedPhotoUrls,
+        photoUrls: [],
       });
+
+      if (photoFile) {
+        const uploaded = await upload(photoFile, "breakage", {
+          propertyId,
+          breakageId,
+          breakageIndex: 1,
+        });
+        if (uploaded?.key) {
+          await updateBreakage.mutateAsync({
+            id: breakageId,
+            data: { photoUrls: [uploaded.key] },
+          });
+        }
+      }
+
       toast.success("Breakage report submitted");
       setOpen(false);
       setDescription("");
+      setPhotoFile(null);
       setPhotoPreview(null);
-      setPhotoBase64(null);
       setAttribution("unattributed");
       utils.breakages.list.invalidate();
     } catch {
       toast.error("Failed to submit breakage report");
     } finally {
-      setUploading(false);
+      setSubmitting(false);
     }
   };
+
+  const busy = submitting || uploading;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -135,7 +146,7 @@ function BreakageReportDialog() {
             {photoPreview ? (
               <div className="relative rounded-lg overflow-hidden border border-border/50">
                 <img src={photoPreview} alt="Breakage" className="w-full h-40 object-cover" />
-                <Button size="sm" variant="outline" className="absolute top-2 right-2 h-7 text-xs bg-white/80" onClick={() => { setPhotoPreview(null); setPhotoBase64(null); }}>Remove</Button>
+                <Button size="sm" variant="outline" className="absolute top-2 right-2 h-7 text-xs bg-white/80" onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}>Remove</Button>
               </div>
             ) : (
               <Button variant="outline" className="w-full h-24 border-dashed" onClick={() => fileRef.current?.click()}>
@@ -146,8 +157,8 @@ function BreakageReportDialog() {
               </Button>
             )}
           </div>
-          <Button className="w-full bg-navy text-white hover:bg-navy/90" onClick={handleSubmit} disabled={uploading}>
-            {uploading ? "Uploading..." : "Submit Report"}
+          <Button className="w-full bg-navy text-white hover:bg-navy/90" onClick={handleSubmit} disabled={busy}>
+            {busy ? "Uploading..." : "Submit Report"}
           </Button>
         </div>
       </DialogContent>

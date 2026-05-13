@@ -11,7 +11,7 @@
  *   const pdfBuffer = await generateContractPdf(html);
  */
 
-import { storagePut } from "../storage";
+import { uploadObject, paths } from "./media";
 
 /**
  * Merge a template HTML string with provided field values.
@@ -120,16 +120,19 @@ export function wrapContractHtml(bodyHtml: string, title: string): string {
 }
 
 /**
- * Store a generated contract HTML as a file and return the storage URL.
+ * Store a generated contract HTML draft in R2. Returns the storage key;
+ * callers resolve to a signed URL via media.getDownloadUrl when serving.
  */
 export async function storeContractDocument(
   contractId: string,
   html: string,
-  filename: string
+  _filename: string
 ): Promise<{ key: string; url: string }> {
-  const key = `ember/contracts/${contractId}/${Date.now()}-${filename}`;
+  const key = paths.contractDraft(contractId, "html");
   const buffer = Buffer.from(html, "utf-8");
-  return storagePut(key, buffer, "text/html");
+  const result = await uploadObject({ key, body: buffer, contentType: "text/html" });
+  if (!result.ok) throw new Error(result.error ?? "Failed to store contract draft");
+  return { key, url: `/api/trpc/upload.getDownloadUrl?key=${encodeURIComponent(key)}` };
 }
 
 /**

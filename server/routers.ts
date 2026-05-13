@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { authRouter } from "./routers/auth";
@@ -5,7 +6,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { mergeTemplate, wrapContractHtml, buildMergeValues, storeContractDocument } from "./services/contractMerge";
 import { calculateFnF, type FnFInput } from "./services/settlement";
-import { uploadModuleFile, validateUpload, type MediaModule } from "./services/media";
+import { paths, getUploadUrl, getDownloadUrl, objectExists } from "./services/media";
 
 const id = z.string().uuid();
 const idOpt = id.optional();
@@ -868,23 +869,130 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── File Upload ────────────────────────────────────────────────
+  // ─── File Upload (Cloudflare R2 via presigned URLs) ─────────────
   upload: router({
-    file: protectedProcedure
+    /**
+     * Issue a presigned PUT URL so the browser uploads bytes directly
+     * to R2. `kind` constrains the destination so a malicious client
+     * can't write to arbitrary keys.
+     */
+    getUploadUrl: protectedProcedure
       .input(z.object({
-        module: z.enum(["attendance", "expenses", "breakages", "contracts", "idcards", "properties", "dailyops", "people"]),
-        entityId: z.string(),
-        filename: z.string(),
-        data: z.string(), // base64 encoded
-        mimeType: z.string(),
+        kind: z.enum([
+          "attendance", "checklist", "expense", "inventory", "breakage",
+          "document", "profile_photo",
+        ]),
+        contentType: z.string().regex(/^[a-z]+\/[a-z0-9.+-]+$/i),
+        personId: id.optional(),
+        propertyId: id.optional(),
+        expenseId: id.optional(),
+        inventoryItemId: id.optional(),
+        breakageId: id.optional(),
+        checklistSection: z.string().max(64).optional(),
+        checklistIndex: z.number().int().min(1).max(20).optional(),
+        breakageIndex: z.number().int().min(1).max(10).optional(),
+        documentType: z.enum([
+          "id_proof", "address_proof", "bank_proof",
+          "photo", "training_certificate", "other",
+        ]).optional(),
+        fileExtension: z.string().regex(/^[a-z0-9]{1,5}$/).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const buffer = Buffer.from(input.data, "base64");
-        const validationError = validateUpload(buffer, input.mimeType);
-        if (validationError) throw new Error(validationError);
-        const result = await uploadModuleFile(input.module as MediaModule, input.entityId, input.filename, buffer, input.mimeType);
-        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "upload", entityType: input.module, entityId: input.entityId, afterValue: { filename: input.filename, url: result.url } });
+        let key: string;
+        switch (input.kind) {
+          case "attendance":
+            if (!input.personId) throw new TRPCError({ code: "BAD_REQUEST", message: "personId required" });
+            key = paths.attendance(input.personId);
+            break;
+          case "checklist":
+            if (!input.propertyId || !input.checklistSection || !input.checklistIndex) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "propertyId, checklistSection, checklistIndex required" });
+            }
+            key = paths.checklist(input.propertyId, input.checklistSection, input.checklistIndex);
+            break;
+          case "expense":
+            if (!input.propertyId || !input.expenseId) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "propertyId and expenseId required" });
+            }
+            key = paths.expense(input.propertyId, input.expenseId);
+            break;
+          case "inventory":
+            if (!input.propertyId || !input.inventoryItemId) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "propertyId and inventoryItemId required" });
+            }
+            key = paths.inventory(input.propertyId, input.inventoryItemId);
+            break;
+          case "breakage":
+            if (!input.propertyId || !input.breakageId || !input.breakageIndex) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "propertyId, breakageId, breakageIndex required" });
+            }
+            key = paths.breakage(input.propertyId, input.breakageId, input.breakageIndex);
+            break;
+          case "document":
+            if (!input.personId || !input.documentType) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "personId and documentType required" });
+            }
+            key = paths.document(input.personId, input.documentType);
+            if (input.fileExtension) key += `.${input.fileExtension}`;
+            break;
+          case "profile_photo":
+            if (!input.personId) throw new TRPCError({ code: "BAD_REQUEST", message: "personId required" });
+            key = paths.profilePhoto(input.personId);
+            break;
+          default:
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Unknown upload kind" });
+        }
+
+        const result = await getUploadUrl({ key, contentType: input.contentType });
+        if (!result) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Storage unavailable" });
+
+        // entityId on audit_log is varchar(36); the R2 key is longer, so
+        // store the related domain entity (person/property/etc.) and put
+        // the key itself in afterValue for traceability.
+        const entityId =
+          input.expenseId ??
+          input.breakageId ??
+          input.inventoryItemId ??
+          input.propertyId ??
+          input.personId ??
+          null;
+        await db.writeAuditLog({
+          actorId: ctx.user.id, actorRole: ctx.user.role,
+          action: "upload.getUploadUrl",
+          entityType: input.kind,
+          entityId,
+          reasonCode: "media_upload",
+          reasonNote: `Issued signed upload URL for ${input.kind}`,
+          afterValue: { key: result.key, contentType: input.contentType },
+        });
+
         return result;
+      }),
+
+    /**
+     * Generate a signed download URL for an existing R2 key.
+     * 15-minute default expiry — long enough to render, short enough
+     * that leaked URLs lapse.
+     */
+    getDownloadUrl: protectedProcedure
+      .input(z.object({
+        key: z.string().min(1).max(512),
+        expiresIn: z.number().int().min(60).max(86400).optional(),
+      }))
+      .query(async ({ input }) => {
+        const url = await getDownloadUrl(input.key, { expiresIn: input.expiresIn });
+        if (!url) throw new TRPCError({ code: "NOT_FOUND", message: "Cannot generate URL" });
+        return { url, key: input.key, expiresIn: input.expiresIn ?? 900 };
+      }),
+
+    /**
+     * Verify the client actually wrote the bytes before persisting a key.
+     */
+    confirmUpload: protectedProcedure
+      .input(z.object({ key: z.string().min(1).max(512) }))
+      .mutation(async ({ input }) => {
+        const exists = await objectExists(input.key);
+        return { exists };
       }),
   }),
 
