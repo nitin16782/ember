@@ -1,5 +1,7 @@
-export const COOKIE_NAME = "app_session_id";
-export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
-export const AXIOS_TIMEOUT_MS = 30_000;
-export const UNAUTHED_ERR_MSG = 'Please login (10001)';
-export const NOT_ADMIN_ERR_MSG = 'You do not have required permission (10002)';
+export const COOKIE_NAME_REFRESH = "ember_refresh";
+export const COOKIE_NAME_CSRF = "ember_csrf";
+export const ONE_DAY_MS = 1000 * 60 * 60 * 24;
+export const THIRTY_DAYS_MS = ONE_DAY_MS * 30;
+export const FIFTEEN_MIN_MS = 1000 * 60 * 15;
+export const UNAUTHED_ERR_MSG = "Authentication required";
+export const FORBIDDEN_ERR_MSG = "You do not have permission for this action";
