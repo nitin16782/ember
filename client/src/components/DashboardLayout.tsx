@@ -51,6 +51,7 @@ const menuGroups: MenuGroup[] = [
     label: "Overview",
     items: [
       { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+      { icon: Clock, label: "Today's roster", path: "/attendance/today" },
     ],
   },
   {

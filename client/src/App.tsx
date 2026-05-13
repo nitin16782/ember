@@ -51,6 +51,7 @@ const Settings = lazy(() => import("./pages/Settings"));
 const OwnerPortal = lazy(() => import("./pages/OwnerPortal"));
 const Anomalies = lazy(() => import("./pages/Anomalies"));
 const AttendanceHome = lazy(() => import("./pages/associate/AttendanceHome"));
+const TodaysRoster = lazy(() => import("./pages/supervisor/TodaysRoster"));
 
 function PageLoader() {
   return (
@@ -125,6 +126,7 @@ function Router() {
                 <Route path="/hiring" component={Hiring} />
                 <Route path="/onboarding" component={Onboarding} />
                 <Route path="/contracts" component={Contracts} />
+                <Route path="/attendance/today" component={TodaysRoster} />
                 <Route path="/attendance" component={Attendance} />
                 <Route path="/leave" component={Leave} />
                 <Route path="/payroll" component={Payroll} />
