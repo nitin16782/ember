@@ -9,6 +9,24 @@ import {
   generateOtp, verifyOtp,
   signAccessToken, verifyAccessToken,
 } from "./services/auth";
+import { normalisePhone } from "./services/sms";
+
+describe("sms helpers — phone normalisation", () => {
+  it("normalises 10-digit Indian numbers", () => {
+    expect(normalisePhone("9876543210")).toBe("919876543210");
+    expect(normalisePhone("98765 43210")).toBe("919876543210");
+    expect(normalisePhone("98765-43210")).toBe("919876543210");
+  });
+  it("preserves country code when '+' present", () => {
+    expect(normalisePhone("+919876543210")).toBe("919876543210");
+    expect(normalisePhone("+91 98765 43210")).toBe("919876543210");
+    expect(normalisePhone("+1 415 555 1234")).toBe("14155551234");
+  });
+  it("strips whitespace and special chars", () => {
+    expect(normalisePhone("  9876543210  ")).toBe("919876543210");
+    expect(normalisePhone("+91 (98765) 43210")).toBe("919876543210");
+  });
+});
 
 // The tests below need a real DB; they are skipped when DATABASE_URL is
 // not set so `pnpm test` still passes in environments without MySQL.

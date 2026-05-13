@@ -22,10 +22,15 @@ export const ENV = {
   r2Bucket: process.env.R2_BUCKET ?? "ember-dev",
   r2PublicUrl: process.env.R2_PUBLIC_URL ?? "",
 
-  // MSG91 (used by Prompt 4)
+  // MSG91 — SMS / OTP (shared-defaults path; DLT-branded headers in Phase 7)
   msg91AuthKey: process.env.MSG91_AUTH_KEY ?? "",
+  msg91DefaultCountryCode: process.env.MSG91_DEFAULT_COUNTRY_CODE ?? "91",
+  msg91OtpExpiryMinutes: parseInt(process.env.MSG91_OTP_EXPIRY_MINUTES ?? "10", 10),
+  msg91OtpLength: parseInt(process.env.MSG91_OTP_LENGTH ?? "6", 10),
+
+  // Optional — only set in Phase 7 when DLT-approved templates exist
   msg91TemplateIdOtp: process.env.MSG91_TEMPLATE_ID_OTP ?? "",
-  msg91SenderId: process.env.MSG91_SENDER_ID ?? "FIREBR",
+  msg91SenderId: process.env.MSG91_SENDER_ID ?? "",
 
   // Email (used by Prompt 3)
   resendApiKey: process.env.RESEND_API_KEY ?? "",

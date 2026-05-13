@@ -13,7 +13,7 @@ import {
   recordFailedLogin, clearFailedLogins, isAccountLocked,
 } from "../services/auth";
 import { sendEmail, magicLinkEmail, otpEmail } from "../services/email";
-import { sendSms, otpSms } from "../services/sms";
+import { sendOtpSms } from "../services/sms";
 import { ENV } from "../_core/env";
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -155,7 +155,10 @@ export const authRouter = router({
       const { code } = await generateOtp(identifier, identifierType, input.purpose);
 
       if (identifierType === "phone") {
-        await sendSms({ to: identifier, body: otpSms(code, 10) });
+        const result = await sendOtpSms({ to: identifier, code });
+        if (!result.ok) {
+          console.error("[auth] OTP SMS delivery failed:", result.error);
+        }
       } else {
         const user = await findUserByIdentifier(identifier);
         const name = user?.name ?? "there";
