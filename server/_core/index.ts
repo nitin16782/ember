@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
+import { randomUUID } from "crypto";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -8,6 +9,9 @@ import { ENV, validateEnv } from "./env";
 import { authRateLimiter, otpRequestLimiter } from "./rateLimit";
 import { serveStatic, setupVite } from "./vite";
 import { registerAllJobs, stopAllJobs, getJobStatus, buildHttpTrigger } from "../jobs/scheduler";
+import { getDb } from "../db";
+import { users, authCredentials } from "../../drizzle/schema";
+import { hashPassword, validatePasswordStrength } from "../services/auth";
 
 async function startServer() {
   validateEnv();
@@ -57,6 +61,72 @@ async function startServer() {
       return;
     }
     res.json({ jobs: getJobStatus() });
+  });
+
+  // One-shot super_admin bootstrap. Gated on ADMIN_BOOTSTRAP_SECRET and
+  // self-disables once any user row exists. Must sit BEFORE serveStatic
+  // so the React catch-all doesn't intercept it.
+  app.post("/api/internal/bootstrap-admin", async (req, res) => {
+    const expected = process.env.ADMIN_BOOTSTRAP_SECRET;
+    if (!expected) {
+      res.status(503).json({ error: "Bootstrap disabled (no secret configured)" });
+      return;
+    }
+
+    const header = req.headers["x-bootstrap-secret"];
+    if (header !== expected) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const { email, password, name, phone } = req.body ?? {};
+    if (!email || !password || !name) {
+      res.status(400).json({ error: "email, password, name required" });
+      return;
+    }
+
+    const strength = validatePasswordStrength(password);
+    if (!strength.ok) {
+      res.status(400).json({ error: strength.reason });
+      return;
+    }
+
+    try {
+      const db = await getDb();
+      if (!db) {
+        res.status(500).json({ error: "DB unavailable" });
+        return;
+      }
+
+      const existing = await db.select().from(users).limit(1);
+      if (existing.length > 0) {
+        res.status(403).json({ error: "Bootstrap already complete (users exist)" });
+        return;
+      }
+
+      const userId = randomUUID();
+      await db.insert(users).values({
+        id: userId,
+        email: email.toLowerCase(),
+        phone: phone ?? null,
+        name,
+        role: "super_admin",
+        isActive: true,
+      });
+
+      const passwordHash = await hashPassword(password);
+      await db.insert(authCredentials).values({
+        id: randomUUID(),
+        userId,
+        passwordHash,
+      });
+
+      console.log(`[bootstrap] created super_admin: ${email} (id=${userId})`);
+      res.json({ ok: true, userId, email });
+    } catch (err) {
+      console.error("[bootstrap] error:", err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+    }
   });
 
   if (ENV.nodeEnv === "development") {
