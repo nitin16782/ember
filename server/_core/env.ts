@@ -41,6 +41,11 @@ export const ENV = {
   staffHostname: process.env.STAFF_HOSTNAME ?? "app.firebrick.one",
   apiHostname: process.env.API_HOSTNAME ?? "api.firebrick.one",
   ownerHostname: process.env.OWNER_HOSTNAME ?? "clients.firebrick.one",
+
+  // Scheduled jobs (Prompt 7 — node-cron)
+  cronSharedSecret: process.env.CRON_SHARED_SECRET ?? "",
+  cronTimezone: process.env.CRON_TIMEZONE ?? "Asia/Kolkata",
+  cronEnabled: process.env.CRON_ENABLED !== "false",
 };
 
 export function validateEnv(): void {
@@ -60,6 +65,7 @@ export function validateEnv(): void {
     ["MSG91_AUTH_KEY", ENV.msg91AuthKey],
     ["RESEND_API_KEY", ENV.resendApiKey],
     ["R2_ACCESS_KEY_ID", ENV.r2AccessKeyId],
+    ["CRON_SHARED_SECRET", ENV.cronSharedSecret],
   ];
   const warned = warnings.filter(([_, v]) => !v).map(([k]) => k);
   if (warned.length > 0) {

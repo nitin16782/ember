@@ -7,6 +7,7 @@ import * as db from "./db";
 import { mergeTemplate, wrapContractHtml, buildMergeValues, storeContractDocument } from "./services/contractMerge";
 import { calculateFnF, type FnFInput } from "./services/settlement";
 import { paths, getUploadUrl, getDownloadUrl, objectExists } from "./services/media";
+import { getJobStatus, runJobNow } from "./jobs/scheduler";
 
 const id = z.string().uuid();
 const idOpt = id.optional();
@@ -1009,6 +1010,36 @@ export const appRouter = router({
     list: protectedProcedure
       .input(z.object({ entityType: z.string().optional(), entityId: idOpt, limit: z.number().optional(), offset: z.number().optional() }).optional())
       .query(async ({ input }) => db.getAuditLogs(input ?? {})),
+  }),
+
+  // ─── Cron observability (super-admin only) ──────────────────────
+  cron: router({
+    status: protectedProcedure.query(({ ctx }) => {
+      if (ctx.user.role !== "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      return getJobStatus();
+    }),
+
+    runNow: protectedProcedure
+      .input(z.object({ name: z.string().min(1).max(64) }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "super_admin") {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        await db.writeAuditLog({
+          actorId: ctx.user.id,
+          actorRole: ctx.user.role,
+          action: "cron.runNow",
+          entityType: "cron",
+          entityId: null,
+          reasonCode: "manual_trigger",
+          reasonNote: `Super-admin manually triggered ${input.name}`,
+          afterValue: { name: input.name },
+        });
+        await runJobNow(input.name);
+        return { ok: true };
+      }),
   }),
 });
 
