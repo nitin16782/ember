@@ -278,6 +278,148 @@ describe("attendance router — backwards-compat list", () => {
   });
 });
 
+describe("attendance.adminSummaries", () => {
+  it("rejects associate role", async () => {
+    const caller = appRouter.createCaller(mockContext("associate"));
+    await expect(
+      caller.attendance.adminSummaries({ fromDate: "2026-05-01", toDate: "2026-05-13" })
+    ).rejects.toThrowError(/FORBIDDEN/);
+  });
+
+  it("rejects supervisor role (admin-only view)", async () => {
+    const caller = appRouter.createCaller(mockContext("supervisor"));
+    await expect(
+      caller.attendance.adminSummaries({ fromDate: "2026-05-01", toDate: "2026-05-13" })
+    ).rejects.toThrowError(/FORBIDDEN/);
+  });
+
+  it("accepts ops_lead and returns shape (empty when no DB)", async () => {
+    const caller = appRouter.createCaller(mockContext("ops_lead"));
+    const r = await caller.attendance.adminSummaries({
+      fromDate: "2026-05-01",
+      toDate: "2026-05-13",
+    });
+    expect(r).toHaveProperty("rows");
+    expect(r).toHaveProperty("nextCursor");
+    expect(r).toHaveProperty("backfillTruncated");
+    expect(Array.isArray(r.rows)).toBe(true);
+  });
+
+  it("accepts property_manager (scoped) and returns array", async () => {
+    const caller = appRouter.createCaller(mockContext("property_manager"));
+    const r = await caller.attendance.adminSummaries({
+      fromDate: "2026-05-01",
+      toDate: "2026-05-13",
+    });
+    expect(Array.isArray(r.rows)).toBe(true);
+  });
+
+  it("rejects malformed dates", async () => {
+    const caller = appRouter.createCaller(mockContext("ops_lead"));
+    await expect(
+      caller.attendance.adminSummaries({ fromDate: "not-a-date", toDate: "2026-05-13" })
+    ).rejects.toThrow();
+  });
+
+  it("rejects limit > 200", async () => {
+    const caller = appRouter.createCaller(mockContext("ops_lead"));
+    await expect(
+      caller.attendance.adminSummaries({
+        fromDate: "2026-05-01",
+        toDate: "2026-05-13",
+        limit: 250 as any,
+      })
+    ).rejects.toThrow();
+  });
+});
+
+describe("attendance.exportCsv", () => {
+  it("rejects associate role", async () => {
+    const caller = appRouter.createCaller(mockContext("associate"));
+    await expect(
+      caller.attendance.exportCsv({ fromDate: "2026-05-01", toDate: "2026-05-13" })
+    ).rejects.toThrowError(/FORBIDDEN/);
+  });
+
+  it("returns BOM-prefixed CSV with filename and rowCount", async () => {
+    const caller = appRouter.createCaller(mockContext("ops_lead"));
+    const r = await caller.attendance.exportCsv({
+      fromDate: "2026-05-01",
+      toDate: "2026-05-13",
+    });
+    expect(r.csv.charCodeAt(0)).toBe(0xfeff);
+    expect(r.filename).toBe("firebrick-attendance-2026-05-01-to-2026-05-13.csv");
+    expect(r.rowCount).toBe(0);
+    expect(r.truncated).toBe(false);
+  });
+
+  it("CSV includes the header row even when empty", async () => {
+    const caller = appRouter.createCaller(mockContext("ops_lead"));
+    const r = await caller.attendance.exportCsv({
+      fromDate: "2026-05-01",
+      toDate: "2026-05-13",
+    });
+    expect(r.csv).toContain("Name,Employee ID,Role,Property,Date,Status,First check-in");
+  });
+});
+
+describe("attendance.auditLog", () => {
+  it("rejects supervisor role (auditors only)", async () => {
+    const caller = appRouter.createCaller(mockContext("supervisor"));
+    await expect(
+      caller.attendance.auditLog({ fromDate: "2026-05-01", toDate: "2026-05-13" })
+    ).rejects.toThrowError(/FORBIDDEN/);
+  });
+
+  it("rejects property_manager role", async () => {
+    const caller = appRouter.createCaller(mockContext("property_manager"));
+    await expect(
+      caller.attendance.auditLog({ fromDate: "2026-05-01", toDate: "2026-05-13" })
+    ).rejects.toThrowError(/FORBIDDEN/);
+  });
+
+  it("accepts ops_lead and returns paginated shape", async () => {
+    const caller = appRouter.createCaller(mockContext("ops_lead"));
+    const r = await caller.attendance.auditLog({
+      fromDate: "2026-05-01",
+      toDate: "2026-05-13",
+    });
+    expect(r).toHaveProperty("entries");
+    expect(r).toHaveProperty("nextCursor");
+    expect(Array.isArray(r.entries)).toBe(true);
+  });
+
+  it("accepts super_admin", async () => {
+    const caller = appRouter.createCaller(mockContext("super_admin"));
+    const r = await caller.attendance.auditLog({
+      fromDate: "2026-05-01",
+      toDate: "2026-05-13",
+    });
+    expect(Array.isArray(r.entries)).toBe(true);
+  });
+
+  it("filters by action enum", async () => {
+    const caller = appRouter.createCaller(mockContext("ops_lead"));
+    const r = await caller.attendance.auditLog({
+      fromDate: "2026-05-01",
+      toDate: "2026-05-13",
+      action: "mark_event_on_behalf",
+    });
+    expect(Array.isArray(r.entries)).toBe(true);
+  });
+
+  it("rejects unknown action", async () => {
+    const caller = appRouter.createCaller(mockContext("ops_lead"));
+    await expect(
+      caller.attendance.auditLog({
+        fromDate: "2026-05-01",
+        toDate: "2026-05-13",
+        action: "demolish_database" as any,
+      })
+    ).rejects.toThrow();
+  });
+});
+
 describe("attendance.pendingEditRequests", () => {
   it("rejects associate role", async () => {
     const caller = appRouter.createCaller(mockContext("associate"));
