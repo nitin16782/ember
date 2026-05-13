@@ -84,7 +84,7 @@ export default function Performance() {
                   </Select>
                 </div>
                 <Button
-                  onClick={() => createFeedback.mutate({ personId: Number(fbForm.personId), type: fbForm.type as any, description: fbForm.description, severity: fbForm.severity as any })}
+                  onClick={() => createFeedback.mutate({ personId: fbForm.personId, type: fbForm.type as any, description: fbForm.description, severity: fbForm.severity as any })}
                   disabled={!fbForm.personId || !fbForm.description || createFeedback.isPending}
                   className="w-full bg-navy text-white hover:bg-navy/90"
                 >{createFeedback.isPending ? "Saving..." : "Record Feedback"}</Button>
@@ -117,7 +117,7 @@ export default function Performance() {
                   </Select>
                 </div>
                 <Button
-                  onClick={() => createReview.mutate({ personId: Number(reviewForm.personId), reviewPeriodStart: reviewForm.periodStart, reviewPeriodEnd: reviewForm.periodEnd, outcome: reviewForm.outcome as any })}
+                  onClick={() => createReview.mutate({ personId: reviewForm.personId, reviewPeriodStart: reviewForm.periodStart, reviewPeriodEnd: reviewForm.periodEnd, outcome: reviewForm.outcome as any })}
                   disabled={!reviewForm.personId || !reviewForm.periodStart || !reviewForm.periodEnd || createReview.isPending}
                   className="w-full bg-navy text-white hover:bg-navy/90"
                 >{createReview.isPending ? "Creating..." : "Create Review"}</Button>

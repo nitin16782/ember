@@ -1,21 +1,23 @@
+import { randomUUID } from "crypto";
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import type { Context } from "./_core/context";
 
+const uuid = () => randomUUID();
+
 function mockContext(role: string = "super_admin"): Context {
   return {
     user: {
-      id: 1,
-      role: role as any,
-      name: "Test User",
-      openId: "test",
+      id: uuid(),
       email: "test@example.com",
       phone: null,
-      loginMethod: null,
+      name: "Test User",
+      role: role as any,
       permissionOverrides: null,
+      isActive: true,
+      lastSignedInAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date(),
-      lastSignedIn: new Date(),
     } as any,
     req: { protocol: "https", headers: {} } as any,
     res: { clearCookie: () => {} } as any,
@@ -56,7 +58,10 @@ describe("contracts.generate", () => {
     const ctx = mockContext("admin");
     const caller = appRouter.createCaller(ctx);
 
-    await expect(caller.contracts.generate({ contractId: 99999 })).rejects.toThrow();
+    // Use a UUID that doesn't exist in the DB so the procedure throws.
+    await expect(
+      caller.contracts.generate({ contractId: uuid(), templateId: uuid() })
+    ).rejects.toThrow();
   });
 });
 
@@ -67,7 +72,7 @@ describe("breakages.create", () => {
 
     await expect(
       caller.breakages.create({
-        propertyId: 99999,
+        propertyId: uuid(),
         description: "Test breakage with photo",
         attributionStatus: "guest",
         photoUrls: ["/storage/test-photo.jpg"],
@@ -76,11 +81,13 @@ describe("breakages.create", () => {
   });
 });
 
-describe("exits.calculateFnF", () => {
-  it("requires a valid exit ID", async () => {
+describe("exits.create", () => {
+  it("requires a valid person ID", async () => {
     const ctx = mockContext("admin");
     const caller = appRouter.createCaller(ctx);
 
-    await expect(caller.exits.calculateFnF({ exitId: 99999 })).rejects.toThrow();
+    await expect(
+      caller.exits.create({ personId: uuid(), exitType: "resignation" })
+    ).rejects.toThrow();
   });
 });

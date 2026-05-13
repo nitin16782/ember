@@ -70,7 +70,7 @@ export default function Roster() {
               </div>
               <div className="space-y-2"><Label>Role Code</Label><Input value={form.roleCode} onChange={(e) => setForm({ ...form, roleCode: e.target.value })} placeholder="e.g. housekeeping" /></div>
               <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
-              <Button onClick={() => { if (!form.personId || !form.propertyId) { toast.error("Person and property required"); return; } createAssignment.mutate({ personId: Number(form.personId), propertyId: Number(form.propertyId), roleCode: form.roleCode || "general", startDate: form.startDate || new Date().toISOString().split('T')[0] }); }} className="w-full bg-navy text-white hover:bg-navy/90" disabled={createAssignment.isPending}>
+              <Button onClick={() => { if (!form.personId || !form.propertyId) { toast.error("Person and property required"); return; } createAssignment.mutate({ personId: form.personId, propertyId: form.propertyId, roleCode: form.roleCode || "general", startDate: form.startDate || new Date().toISOString().split('T')[0] }); }} className="w-full bg-navy text-white hover:bg-navy/90" disabled={createAssignment.isPending}>
                 {createAssignment.isPending ? "Assigning..." : "Create Assignment"}
               </Button>
             </div>

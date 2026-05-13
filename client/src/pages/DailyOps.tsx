@@ -85,7 +85,7 @@ function BreakageReportDialog() {
         uploadedPhotoUrls = [uploaded.url];
       }
       await createBreakage.mutateAsync({
-        propertyId: 1,
+        propertyId: "00000000-0000-0000-0000-000000000001",
         description,
         attributionStatus: attribution as any,
         photoUrls: uploadedPhotoUrls,

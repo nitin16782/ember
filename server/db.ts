@@ -1,17 +1,17 @@
-import { eq, desc, and, gte, lte, sql, like, or, inArray, count, sum } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import { eq, desc, and, gte, lte, sql, like, or, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
-  InsertUser, users, people, properties, owners, propertyOwners,
+  InsertUser, users, people, properties, owners,
   assignments, shiftEvents, leaveApplications, leaveBalances, leavePolicies,
-  payrollRuns, payrollLines, payrollDeductions, salaryHolds,
-  requisitions, candidates, onboardingChecklists, contracts, contractTemplates,
+  payrollRuns, payrollLines,
+  requisitions, candidates, requisitionCandidates, onboardingChecklists, contracts, contractTemplates,
   trainingModules, trainingCompletions, feedback, performanceReviews,
   exits, idCards, referrals, dailyChecklists, breakages,
   expenses, vendors, workOrders, inventoryItems, bookings,
   invoices, payments, requests, monthlyReports,
   notifications, auditLog, feeStructures, slas,
-  shiftEventEdits,
-  type InsertPerson, type Person,
+  type InsertPerson,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -28,14 +28,19 @@ export async function getDb() {
   return _db;
 }
 
-export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) throw new Error("User openId is required for upsert");
+function newId(): string {
+  return randomUUID();
+}
+
+export async function upsertUser(user: InsertUser): Promise<string | undefined> {
+  if (!user.email) throw new Error("User email is required for upsert");
   const db = await getDb();
   if (!db) { console.warn("[Database] Cannot upsert user: database not available"); return; }
   try {
-    const values: InsertUser = { openId: user.openId };
+    const id = user.id ?? newId();
+    const values: InsertUser = { id, email: user.email };
     const updateSet: Record<string, unknown> = {};
-    const textFields = ["name", "email", "loginMethod"] as const;
+    const textFields = ["name", "phone"] as const;
     type TextField = (typeof textFields)[number];
     const assignNullable = (field: TextField) => {
       const value = user[field];
@@ -45,28 +50,29 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet[field] = normalized;
     };
     textFields.forEach(assignNullable);
-    if (user.lastSignedIn !== undefined) { values.lastSignedIn = user.lastSignedIn; updateSet.lastSignedIn = user.lastSignedIn; }
+    if (user.lastSignedInAt !== undefined) { values.lastSignedInAt = user.lastSignedInAt; updateSet.lastSignedInAt = user.lastSignedInAt; }
     if (user.role !== undefined) { values.role = user.role; updateSet.role = user.role; }
-    if (!values.lastSignedIn) values.lastSignedIn = new Date();
-    if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
+    if (!values.lastSignedInAt) values.lastSignedInAt = new Date();
+    if (Object.keys(updateSet).length === 0) updateSet.lastSignedInAt = new Date();
     await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+    return id;
   } catch (error) { console.error("[Database] Failed to upsert user:", error); throw error; }
 }
 
-export async function getUserByOpenId(openId: string) {
+export async function getUserByEmail(email: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 // ─── Audit Log ──────────────────────────────────────────────────────
 export async function writeAuditLog(entry: {
-  actorId?: number | null;
+  actorId?: string | null;
   actorRole?: string | null;
   action: string;
   entityType: string;
-  entityId?: number | null;
+  entityId?: string | null;
   beforeValue?: unknown;
   afterValue?: unknown;
   reasonCode?: string | null;
@@ -77,6 +83,7 @@ export async function writeAuditLog(entry: {
   const db = await getDb();
   if (!db) return;
   await db.insert(auditLog).values({
+    id: newId(),
     actorId: entry.actorId ?? null,
     actorRole: entry.actorRole ?? null,
     action: entry.action,
@@ -91,7 +98,7 @@ export async function writeAuditLog(entry: {
   });
 }
 
-export async function getAuditLogs(opts: { entityType?: string; entityId?: number; limit?: number; offset?: number }) {
+export async function getAuditLogs(opts: { entityType?: string; entityId?: string; limit?: number; offset?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -115,7 +122,7 @@ export async function listPeople(opts?: { status?: string; staffType?: string; s
   return filtered.orderBy(desc(people.createdAt)).limit(opts?.limit ?? 50).offset(opts?.offset ?? 0);
 }
 
-export async function getPersonById(id: number) {
+export async function getPersonById(id: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(people).where(eq(people.id, id)).limit(1);
@@ -125,11 +132,12 @@ export async function getPersonById(id: number) {
 export async function createPerson(data: InsertPerson) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(people).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(people).values({ ...data, id });
+  return id;
 }
 
-export async function updatePerson(id: number, data: Partial<InsertPerson>) {
+export async function updatePerson(id: string, data: Partial<InsertPerson>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(people).set(data).where(eq(people.id, id));
@@ -163,7 +171,7 @@ export async function listProperties(opts?: { status?: string; search?: string; 
   return filtered.orderBy(desc(properties.createdAt)).limit(opts?.limit ?? 50).offset(opts?.offset ?? 0);
 }
 
-export async function getPropertyById(id: number) {
+export async function getPropertyById(id: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(properties).where(eq(properties.id, id)).limit(1);
@@ -173,11 +181,12 @@ export async function getPropertyById(id: number) {
 export async function createProperty(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(properties).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(properties).values({ ...data, id });
+  return id;
 }
 
-export async function updateProperty(id: number, data: any) {
+export async function updateProperty(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(properties).set(data).where(eq(properties.id, id));
@@ -209,12 +218,13 @@ export async function listOwners(opts?: { limit?: number; offset?: number }) {
 export async function createOwner(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(owners).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(owners).values({ ...data, id });
+  return id;
 }
 
 // ─── Assignments ────────────────────────────────────────────────────
-export async function listAssignments(opts?: { propertyId?: number; personId?: number; status?: string; limit?: number }) {
+export async function listAssignments(opts?: { propertyId?: string; personId?: string; status?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -229,12 +239,13 @@ export async function listAssignments(opts?: { propertyId?: number; personId?: n
 export async function createAssignment(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(assignments).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(assignments).values({ ...data, id });
+  return id;
 }
 
 // ─── Attendance ─────────────────────────────────────────────────────
-export async function listShiftEvents(opts?: { personId?: number; propertyId?: number; from?: Date; to?: Date; limit?: number }) {
+export async function listShiftEvents(opts?: { personId?: string; propertyId?: string; from?: Date; to?: Date; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -250,12 +261,13 @@ export async function listShiftEvents(opts?: { personId?: number; propertyId?: n
 export async function createShiftEvent(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(shiftEvents).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(shiftEvents).values({ ...data, id });
+  return id;
 }
 
 // ─── Leave ──────────────────────────────────────────────────────────
-export async function listLeaveApplications(opts?: { personId?: number; status?: string; limit?: number; offset?: number }) {
+export async function listLeaveApplications(opts?: { personId?: string; status?: string; limit?: number; offset?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -269,11 +281,12 @@ export async function listLeaveApplications(opts?: { personId?: number; status?:
 export async function createLeaveApplication(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(leaveApplications).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(leaveApplications).values({ ...data, id });
+  return id;
 }
 
-export async function updateLeaveApplication(id: number, data: any) {
+export async function updateLeaveApplication(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(leaveApplications).set(data).where(eq(leaveApplications.id, id));
@@ -285,7 +298,7 @@ export async function listLeavePolicies() {
   return db.select().from(leavePolicies).where(eq(leavePolicies.active, true));
 }
 
-export async function getLeaveBalances(personId: number) {
+export async function getLeaveBalances(personId: string) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(leaveBalances).where(eq(leaveBalances.personId, personId));
@@ -298,7 +311,7 @@ export async function listPayrollRuns(opts?: { limit?: number }) {
   return db.select().from(payrollRuns).orderBy(desc(payrollRuns.createdAt)).limit(opts?.limit ?? 20);
 }
 
-export async function getPayrollLines(runId: number) {
+export async function getPayrollLines(runId: string) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(payrollLines).where(eq(payrollLines.payrollRunId, runId));
@@ -307,8 +320,9 @@ export async function getPayrollLines(runId: number) {
 export async function createPayrollRun(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(payrollRuns).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(payrollRuns).values({ ...data, id });
+  return id;
 }
 
 // ─── Hiring ─────────────────────────────────────────────────────────
@@ -325,36 +339,110 @@ export async function listRequisitions(opts?: { status?: string; limit?: number 
 export async function createRequisition(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(requisitions).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(requisitions).values({ ...data, id });
+  return id;
 }
 
-export async function listCandidates(opts?: { requisitionId?: number; status?: string; limit?: number }) {
+// Candidates are now linked to requisitions through the requisition_candidates pivot.
+// When a requisitionId is supplied, list candidates that have a link to that requisition.
+export async function listCandidates(opts?: { requisitionId?: string; status?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
+  const limit = opts?.limit ?? 50;
+  if (opts?.requisitionId) {
+    const rows = await db
+      .select()
+      .from(candidates)
+      .innerJoin(requisitionCandidates, eq(candidates.id, requisitionCandidates.candidateId))
+      .where(
+        opts.status
+          ? and(
+              eq(requisitionCandidates.requisitionId, opts.requisitionId),
+              eq(candidates.status, opts.status as any),
+            )
+          : eq(requisitionCandidates.requisitionId, opts.requisitionId),
+      )
+      .orderBy(desc(candidates.createdAt))
+      .limit(limit);
+    return rows.map((r: any) => r.candidates);
+  }
   const conditions = [];
-  if (opts?.requisitionId) conditions.push(eq(candidates.requisitionId, opts.requisitionId));
   if (opts?.status) conditions.push(eq(candidates.status, opts.status as any));
   const query = db.select().from(candidates);
   const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
-  return filtered.orderBy(desc(candidates.createdAt)).limit(opts?.limit ?? 50);
+  return filtered.orderBy(desc(candidates.createdAt)).limit(limit);
 }
 
 export async function createCandidate(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(candidates).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(candidates).values({ ...data, id });
+  return id;
 }
 
-export async function updateCandidate(id: number, data: any) {
+export async function updateCandidate(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(candidates).set(data).where(eq(candidates.id, id));
 }
 
+export async function linkCandidateToRequisition(opts: {
+  requisitionId: string;
+  candidateId: string;
+  notes?: string;
+  stageChangedBy?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const id = newId();
+  await db.insert(requisitionCandidates).values({
+    id,
+    requisitionId: opts.requisitionId,
+    candidateId: opts.candidateId,
+    notes: opts.notes,
+    stageChangedBy: opts.stageChangedBy,
+  });
+  return id;
+}
+
+export async function updateRequisitionCandidateStage(opts: {
+  id: string;
+  newStage: any;
+  notes?: string;
+  stageChangedBy?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(requisitionCandidates)
+    .set({
+      stage: opts.newStage,
+      stageChangedAt: new Date(),
+      stageChangedBy: opts.stageChangedBy,
+      notes: opts.notes,
+    })
+    .where(eq(requisitionCandidates.id, opts.id));
+}
+
+export async function candidatesForRequisition(requisitionId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(requisitionCandidates)
+    .innerJoin(candidates, eq(requisitionCandidates.candidateId, candidates.id))
+    .where(eq(requisitionCandidates.requisitionId, requisitionId))
+    .orderBy(desc(requisitionCandidates.stageChangedAt));
+  return rows.map((r: any) => ({
+    link: r.requisition_candidates,
+    candidate: r.candidates,
+  }));
+}
+
 // ─── Expenses ───────────────────────────────────────────────────────
-export async function listExpenses(opts?: { propertyId?: number; status?: string; limit?: number; offset?: number }) {
+export async function listExpenses(opts?: { propertyId?: string; status?: string; limit?: number; offset?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -368,11 +456,12 @@ export async function listExpenses(opts?: { propertyId?: number; status?: string
 export async function createExpense(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(expenses).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(expenses).values({ ...data, id });
+  return id;
 }
 
-export async function updateExpense(id: number, data: any) {
+export async function updateExpense(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(expenses).set(data).where(eq(expenses.id, id));
@@ -393,11 +482,12 @@ export async function listVendors(opts?: { status?: string; search?: string; lim
 export async function createVendor(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(vendors).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(vendors).values({ ...data, id });
+  return id;
 }
 
-export async function listWorkOrders(opts?: { propertyId?: number; vendorId?: number; status?: string; limit?: number }) {
+export async function listWorkOrders(opts?: { propertyId?: string; vendorId?: string; status?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -412,12 +502,13 @@ export async function listWorkOrders(opts?: { propertyId?: number; vendorId?: nu
 export async function createWorkOrder(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(workOrders).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(workOrders).values({ ...data, id });
+  return id;
 }
 
 // ─── Inventory ──────────────────────────────────────────────────────
-export async function listInventoryItems(opts?: { propertyId?: number; limit?: number }) {
+export async function listInventoryItems(opts?: { propertyId?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -430,12 +521,13 @@ export async function listInventoryItems(opts?: { propertyId?: number; limit?: n
 export async function createInventoryItem(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(inventoryItems).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(inventoryItems).values({ ...data, id });
+  return id;
 }
 
 // ─── Bookings ───────────────────────────────────────────────────────
-export async function listBookings(opts?: { propertyId?: number; status?: string; limit?: number }) {
+export async function listBookings(opts?: { propertyId?: string; status?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -449,12 +541,13 @@ export async function listBookings(opts?: { propertyId?: number; status?: string
 export async function createBooking(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(bookings).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(bookings).values({ ...data, id });
+  return id;
 }
 
 // ─── Invoices ───────────────────────────────────────────────────────
-export async function listInvoices(opts?: { propertyId?: number; ownerId?: number; status?: string; limit?: number; offset?: number }) {
+export async function listInvoices(opts?: { propertyId?: string; ownerId?: string; status?: string; limit?: number; offset?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -469,18 +562,19 @@ export async function listInvoices(opts?: { propertyId?: number; ownerId?: numbe
 export async function createInvoice(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(invoices).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(invoices).values({ ...data, id });
+  return id;
 }
 
-export async function updateInvoice(id: number, data: any) {
+export async function updateInvoice(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(invoices).set(data).where(eq(invoices.id, id));
 }
 
 // ─── Payments ───────────────────────────────────────────────────────
-export async function listPayments(opts?: { invoiceId?: number; limit?: number }) {
+export async function listPayments(opts?: { invoiceId?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -493,12 +587,13 @@ export async function listPayments(opts?: { invoiceId?: number; limit?: number }
 export async function createPayment(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(payments).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(payments).values({ ...data, id });
+  return id;
 }
 
 // ─── Notifications ──────────────────────────────────────────────────
-export async function listNotifications(opts: { recipientId: number; limit?: number }) {
+export async function listNotifications(opts: { recipientId: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(notifications).where(eq(notifications.recipientId, opts.recipientId)).orderBy(desc(notifications.createdAt)).limit(opts.limit ?? 30);
@@ -507,18 +602,19 @@ export async function listNotifications(opts: { recipientId: number; limit?: num
 export async function createNotification(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(notifications).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(notifications).values({ ...data, id });
+  return id;
 }
 
-export async function markNotificationRead(id: number) {
+export async function markNotificationRead(id: string) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(notifications).set({ readAt: new Date(), status: "read" }).where(eq(notifications.id, id));
 }
 
 // ─── Daily Ops ──────────────────────────────────────────────────────
-export async function listDailyChecklists(opts?: { propertyId?: number; limit?: number }) {
+export async function listDailyChecklists(opts?: { propertyId?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -531,11 +627,12 @@ export async function listDailyChecklists(opts?: { propertyId?: number; limit?: 
 export async function createDailyChecklist(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(dailyChecklists).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(dailyChecklists).values({ ...data, id });
+  return id;
 }
 
-export async function listBreakages(opts?: { propertyId?: number; limit?: number }) {
+export async function listBreakages(opts?: { propertyId?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -552,7 +649,7 @@ export async function listTrainingModules(opts?: { limit?: number }) {
   return db.select().from(trainingModules).where(eq(trainingModules.active, true)).limit(opts?.limit ?? 50);
 }
 
-export async function listTrainingCompletions(opts?: { personId?: number; moduleId?: number; limit?: number }) {
+export async function listTrainingCompletions(opts?: { personId?: string; moduleId?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -575,7 +672,7 @@ export async function listExits(opts?: { status?: string; limit?: number }) {
 }
 
 // ─── Referrals ──────────────────────────────────────────────────────
-export async function listReferrals(opts?: { referrerPersonId?: number; limit?: number }) {
+export async function listReferrals(opts?: { referrerPersonId?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -586,7 +683,7 @@ export async function listReferrals(opts?: { referrerPersonId?: number; limit?: 
 }
 
 // ─── Requests (Owner Portal) ────────────────────────────────────────
-export async function listRequests(opts?: { propertyId?: number; ownerId?: number; status?: string; limit?: number }) {
+export async function listRequests(opts?: { propertyId?: string; ownerId?: string; status?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -601,15 +698,16 @@ export async function listRequests(opts?: { propertyId?: number; ownerId?: numbe
 export async function createRequest(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(requests).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(requests).values({ ...data, id });
+  return id;
 }
 
 // ─── Dashboard Stats ────────────────────────────────────────────────
 export async function getDashboardStats() {
   const db = await getDb();
   if (!db) return { people: { total: 0, active: 0 }, properties: { total: 0, live: 0 }, expenses: { pending: 0 }, leaves: { pending: 0 } };
-  
+
   const [peopleStats, propStats] = await Promise.all([
     getPeopleStats(),
     getPropertyStats(),
@@ -630,11 +728,12 @@ export async function getDashboardStats() {
 export async function createExit(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(exits).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(exits).values({ ...data, id });
+  return id;
 }
 
-export async function updateExit(id: number, data: any) {
+export async function updateExit(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(exits).set(data).where(eq(exits.id, id));
@@ -644,18 +743,19 @@ export async function updateExit(id: number, data: any) {
 export async function createReferral(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(referrals).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(referrals).values({ ...data, id });
+  return id;
 }
 
-export async function updateReferral(id: number, data: any) {
+export async function updateReferral(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(referrals).set(data).where(eq(referrals.id, id));
 }
 
 // ─── ID Cards (CRUD) ──────────────────────────────────────────────
-export async function listIdCards(opts?: { personId?: number; status?: string; limit?: number }) {
+export async function listIdCards(opts?: { personId?: string; status?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -669,18 +769,19 @@ export async function listIdCards(opts?: { personId?: number; status?: string; l
 export async function createIdCard(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(idCards).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(idCards).values({ ...data, id });
+  return id;
 }
 
-export async function updateIdCard(id: number, data: any) {
+export async function updateIdCard(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(idCards).set(data).where(eq(idCards.id, id));
 }
 
 // ─── Contracts (CRUD) ──────────────────────────────────────────────
-export async function listContracts(opts?: { personId?: number; status?: string; limit?: number }) {
+export async function listContracts(opts?: { personId?: string; status?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -691,7 +792,7 @@ export async function listContracts(opts?: { personId?: number; status?: string;
   return filtered.orderBy(desc(contracts.createdAt)).limit(opts?.limit ?? 50);
 }
 
-export async function getContractById(id: number) {
+export async function getContractById(id: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(contracts).where(eq(contracts.id, id)).limit(1);
@@ -701,11 +802,12 @@ export async function getContractById(id: number) {
 export async function createContract(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(contracts).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(contracts).values({ ...data, id });
+  return id;
 }
 
-export async function updateContract(id: number, data: any) {
+export async function updateContract(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(contracts).set(data).where(eq(contracts.id, id));
@@ -721,12 +823,13 @@ export async function listContractTemplates() {
 export async function createContractTemplate(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(contractTemplates).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(contractTemplates).values({ ...data, id });
+  return id;
 }
 
 // ─── Performance Reviews (CRUD) ────────────────────────────────────
-export async function listPerformanceReviews(opts?: { personId?: number; limit?: number }) {
+export async function listPerformanceReviews(opts?: { personId?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -739,12 +842,13 @@ export async function listPerformanceReviews(opts?: { personId?: number; limit?:
 export async function createPerformanceReview(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(performanceReviews).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(performanceReviews).values({ ...data, id });
+  return id;
 }
 
 // ─── Feedback (CRUD) ───────────────────────────────────────────────
-export async function listFeedback(opts?: { personId?: number; type?: string; limit?: number }) {
+export async function listFeedback(opts?: { personId?: string; type?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -758,12 +862,13 @@ export async function listFeedback(opts?: { personId?: number; type?: string; li
 export async function createFeedback(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(feedback).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(feedback).values({ ...data, id });
+  return id;
 }
 
 // ─── Onboarding Checklists (CRUD) ──────────────────────────────────
-export async function listOnboardingChecklists(opts?: { personId?: number; status?: string; limit?: number }) {
+export async function listOnboardingChecklists(opts?: { personId?: string; status?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -777,11 +882,12 @@ export async function listOnboardingChecklists(opts?: { personId?: number; statu
 export async function createOnboardingChecklist(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(onboardingChecklists).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(onboardingChecklists).values({ ...data, id });
+  return id;
 }
 
-export async function updateOnboardingChecklist(id: number, data: any) {
+export async function updateOnboardingChecklist(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(onboardingChecklists).set(data).where(eq(onboardingChecklists.id, id));
@@ -791,11 +897,12 @@ export async function updateOnboardingChecklist(id: number, data: any) {
 export async function createBreakage(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(breakages).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(breakages).values({ ...data, id });
+  return id;
 }
 
-export async function updateBreakage(id: number, data: any) {
+export async function updateBreakage(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(breakages).set(data).where(eq(breakages.id, id));
@@ -805,19 +912,21 @@ export async function updateBreakage(id: number, data: any) {
 export async function createTrainingModule(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(trainingModules).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(trainingModules).values({ ...data, id });
+  return id;
 }
 
 export async function createTrainingCompletion(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(trainingCompletions).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(trainingCompletions).values({ ...data, id });
+  return id;
 }
 
 // ─── Monthly Reports ───────────────────────────────────────────────
-export async function listMonthlyReports(opts?: { propertyId?: number; ownerId?: number; limit?: number }) {
+export async function listMonthlyReports(opts?: { propertyId?: string; ownerId?: string; limit?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -832,44 +941,45 @@ export async function listMonthlyReports(opts?: { propertyId?: number; ownerId?:
 export async function createLeavePolicy(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(leavePolicies).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(leavePolicies).values({ ...data, id });
+  return id;
 }
 
-export async function updateLeavePolicy(id: number, data: any) {
+export async function updateLeavePolicy(id: string, data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(leavePolicies).set(data).where(eq(leavePolicies.id, id));
 }
 
 // ─── Fee Structures ────────────────────────────────────────────────
-export async function listFeeStructures(_propertyId?: number) {
+export async function listFeeStructures(_propertyId?: string) {
   const db = await getDb();
   if (!db) return [];
-  // feeStructures is a global table — not per-property
   return db.select().from(feeStructures);
 }
 
 export async function createFeeStructure(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(feeStructures).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(feeStructures).values({ ...data, id });
+  return id;
 }
 
 // ─── SLAs ──────────────────────────────────────────────────────────
-export async function listSlas(_propertyId?: number) {
+export async function listSlas(_propertyId?: string) {
   const db = await getDb();
   if (!db) return [];
-  // slas is a global table — not per-property
   return db.select().from(slas);
 }
 
 export async function createSla(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(slas).values(data);
-  return result[0].insertId;
+  const id = data.id ?? newId();
+  await db.insert(slas).values({ ...data, id });
+  return id;
 }
 
 // ─── Anomaly Detection ────────────────────────────────────────────
