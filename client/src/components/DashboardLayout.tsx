@@ -1,9 +1,11 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -19,7 +21,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   LayoutDashboard, Users, Briefcase, ClipboardCheck, FileText,
@@ -27,12 +28,12 @@ import {
   CreditCard, UserPlus, Building2, CalendarDays, ListChecks,
   Receipt, Store, Package, CalendarRange, FileBarChart,
   DollarSign, Bell, Shield, Settings, LogOut, PanelLeft,
-  ChevronDown, ChevronRight, Flame, AlertTriangle,
+  ChevronDown, ChevronRight, Flame, AlertTriangle, KeyRound,
+  User as UserIcon,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
-import { Button } from "./ui/button";
 
 type MenuItem = {
   icon: React.ComponentType<{ className?: string }>;
@@ -124,44 +125,17 @@ export default function DashboardLayout({
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
-  const { loading, user } = useAuth();
+  const { status } = useAuth();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
-  if (loading) {
+  // RequireAuth wraps this component, so we only render when authenticated.
+  // The "loading" status briefly appears on first paint before RequireAuth
+  // mounts; show the skeleton in that window.
+  if (status === "loading") {
     return <DashboardLayoutSkeleton />;
-  }
-
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Flame className="h-8 w-8 text-gold" />
-              <span className="font-display text-2xl font-semibold tracking-tight text-navy">
-                Ember
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Property Operations Platform by Pinch Lifestyle Services.
-              Sign in to access the dashboard.
-            </p>
-          </div>
-          <Button
-            onClick={() => {
-              window.location.href = getLoginUrl();
-            }}
-            size="lg"
-            className="w-full bg-navy text-white hover:bg-navy/90 shadow-lg hover:shadow-xl transition-all"
-          >
-            Sign in
-          </Button>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -348,7 +322,15 @@ function DashboardLayoutContent({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem
-                  onClick={logout}
+                  onClick={() => setLocation("/auth/set-password")}
+                  className="cursor-pointer"
+                >
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  <span>Change password</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => logout().then(() => setLocation("/login"))}
                   className="cursor-pointer text-destructive focus:text-destructive"
                 >
                   <LogOut className="mr-2 h-4 w-4" />
@@ -397,6 +379,29 @@ function DashboardLayoutContent({
                 {activeMenuItem?.label ?? "Dashboard"}
               </h1>
             </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-2 px-3 py-1.5 rounded hover:bg-accent text-sm">
+                  <UserIcon className="h-4 w-4 text-navy" />
+                  <span className="text-foreground">{user?.name ?? user?.email}</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div className="text-xs text-muted-foreground font-normal capitalize">
+                    {user?.role.replace(/_/g, " ")}
+                  </div>
+                  <div className="text-sm">{user?.email}</div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setLocation("/auth/set-password")}>
+                  <KeyRound className="h-4 w-4 mr-2" /> Change password
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => logout().then(() => setLocation("/login"))}>
+                  <LogOut className="h-4 w-4 mr-2" /> Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
 
