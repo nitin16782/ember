@@ -2,8 +2,9 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, Briefcase, CreditCard } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, Briefcase, CreditCard, ClipboardCheck, FileText, History, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -18,6 +19,9 @@ export default function PersonDetail() {
   const [, setLocation] = useLocation();
   const id = Number(params.id);
   const { data: person, isLoading } = trpc.people.get.useQuery({ id }, { enabled: !!id });
+  const { data: onboardingItems } = trpc.onboarding.list.useQuery({ personId: id }, { enabled: !!id });
+  const { data: contracts } = trpc.contracts.list.useQuery({ personId: id }, { enabled: !!id });
+  const { data: auditEntries } = trpc.auditLog.list.useQuery({ entityType: "person", entityId: id }, { enabled: !!id });
 
   if (isLoading) {
     return (
@@ -38,6 +42,12 @@ export default function PersonDetail() {
       </div>
     );
   }
+
+  const onboardingChecklist = onboardingItems?.[0];
+  const checklistItems = (onboardingChecklist?.items && Array.isArray(onboardingChecklist.items)) ? onboardingChecklist.items as { label: string; done: boolean }[] : [];
+  const doneCount = checklistItems.filter(i => i.done).length;
+  const totalCount = checklistItems.length || 1;
+  const onboardingPct = Math.round((doneCount / totalCount) * 100);
 
   return (
     <div className="space-y-6">
@@ -68,11 +78,12 @@ export default function PersonDetail() {
       </Card>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="bg-muted/50">
+        <TabsList className="bg-cream border border-border/50 flex-wrap h-auto gap-1 p-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
-          <TabsTrigger value="salary">Salary</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
+          <TabsTrigger value="onboarding"><ClipboardCheck className="h-3.5 w-3.5 mr-1" />Onboarding</TabsTrigger>
+          <TabsTrigger value="documents"><FileText className="h-3.5 w-3.5 mr-1" />Documents</TabsTrigger>
+          <TabsTrigger value="salary"><CreditCard className="h-3.5 w-3.5 mr-1" />Salary</TabsTrigger>
+          <TabsTrigger value="history"><History className="h-3.5 w-3.5 mr-1" />History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -116,14 +127,129 @@ export default function PersonDetail() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="documents">
-          <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><p className="text-sm text-muted-foreground">Document management coming soon</p></CardContent></Card>
+        <TabsContent value="onboarding" className="space-y-4">
+          {onboardingChecklist ? (
+            <>
+              <Card className="border-border/50">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-lg bg-navy/5 flex items-center justify-center">
+                        <ClipboardCheck className="h-4 w-4 text-navy" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">Onboarding Checklist</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Created {String(onboardingChecklist.createdAt).slice(0, 10)}</p>
+                      </div>
+                    </div>
+                    <Badge className={
+                      onboardingChecklist.status === "complete" ? "bg-green-100 text-green-700" :
+                      onboardingChecklist.status === "blocked" ? "bg-red-100 text-red-700" :
+                      "bg-blue-100 text-blue-700"
+                    }>
+                      {onboardingChecklist.status === "complete" ? <CheckCircle2 className="h-3 w-3 mr-1" /> :
+                       onboardingChecklist.status === "blocked" ? <AlertTriangle className="h-3 w-3 mr-1" /> :
+                       <Clock className="h-3 w-3 mr-1" />}
+                      {onboardingChecklist.status?.replace("_", " ")}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">{doneCount}/{checklistItems.length} items completed</span>
+                      <span className="font-medium">{onboardingPct}%</span>
+                    </div>
+                    <Progress value={onboardingPct} className="h-1.5" />
+                  </div>
+                </CardContent>
+              </Card>
+              <div className="space-y-1.5">
+                {checklistItems.map((item, i) => (
+                  <div key={i} className={`flex items-center gap-3 p-3 rounded-lg border border-border/50 ${item.done ? "bg-green-50/50" : "bg-background"}`}>
+                    <div className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${item.done ? "bg-green-100" : "bg-gray-100"}`}>
+                      {item.done ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <span className="text-xs text-muted-foreground">{i + 1}</span>}
+                    </div>
+                    <span className={`text-sm ${item.done ? "text-green-700 line-through" : "text-foreground"}`}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <Card className="border-border/50 border-dashed">
+              <CardContent className="p-12 text-center">
+                <ClipboardCheck className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">No onboarding checklist for this associate</p>
+                <p className="text-xs text-muted-foreground mt-1">Create one from the Onboarding module</p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
+
+        <TabsContent value="documents" className="space-y-2">
+          {contracts && contracts.length > 0 ? (
+            contracts.map((c: any) => (
+              <Card key={c.id} className="border-border/50">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg bg-navy/5 flex items-center justify-center"><FileText className="h-4 w-4 text-navy" /></div>
+                    <div>
+                      <p className="font-medium text-sm">{c.contractType} Contract</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Start: {c.startDate}{c.endDate ? ` · End: ${c.endDate}` : ""}</p>
+                    </div>
+                  </div>
+                  <Badge className={c.status === "signed" || c.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}>{c.status}</Badge>
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><FileText className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" /><p className="text-sm text-muted-foreground">No contracts or documents for this associate</p></CardContent></Card>
+          )}
+        </TabsContent>
+
         <TabsContent value="salary">
-          <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><p className="text-sm text-muted-foreground">Salary history and structure coming soon</p></CardContent></Card>
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Current Salary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 bg-navy/5 rounded-lg text-center">
+                  <p className="text-2xl font-semibold text-navy">{person.currentSalary ? `₹${Number(person.currentSalary).toLocaleString()}` : "—"}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Monthly CTC</p>
+                </div>
+                <div className="p-4 bg-green-50 rounded-lg text-center">
+                  <p className="text-2xl font-semibold text-green-700">{person.staffType === "full_time" ? "Monthly" : "Daily"}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Pay Cycle</p>
+                </div>
+                <div className="p-4 bg-gold/5 rounded-lg text-center">
+                  <p className="text-2xl font-semibold text-gold">{person.staffType?.replace("_", " ")}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Worker Type</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
-        <TabsContent value="history">
-          <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><p className="text-sm text-muted-foreground">Audit trail and change history coming soon</p></CardContent></Card>
+
+        <TabsContent value="history" className="space-y-2">
+          {auditEntries && auditEntries.length > 0 ? (
+            auditEntries.map((entry: any) => (
+              <Card key={entry.id} className="border-border/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-lg bg-navy/5 flex items-center justify-center"><History className="h-3.5 w-3.5 text-navy" /></div>
+                      <div>
+                        <p className="text-sm font-medium">{entry.action}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">By {entry.actorRole || "system"} · {String(entry.createdAt).slice(0, 19).replace("T", " ")}</p>
+                      </div>
+                    </div>
+                    {entry.reasonCode && <Badge variant="outline" className="text-xs">{entry.reasonCode}</Badge>}
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><History className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" /><p className="text-sm text-muted-foreground">No audit history for this associate</p></CardContent></Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

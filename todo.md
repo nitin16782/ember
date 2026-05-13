@@ -30,7 +30,7 @@
 ## Phase 4: People Domain — Onboarding
 - [x] Onboarding page with progress tracking, blocker alerts, and checklist template
 - [x] Onboarding CRUD mutations wired (create/list/update)
-- [ ] Per-person onboarding tab on PersonDetail page
+- [x] Per-person onboarding tab on PersonDetail page (with checklist progress)
 
 ## Phase 5: People Domain — Contracts & Documents
 - [x] Contracts page with contract list, template management, and signing service tab
@@ -80,7 +80,7 @@
 ## Phase 12: People Domain — Identity (ID Cards)
 - [x] Digital ID cards page with card list, status tracking, and QR preview
 - [x] ID card create/revoke mutations wired (QR token string auto-generated)
-- [ ] QR code image rendering (server-side or client SVG)
+- [x] QR code image rendering (real scannable QR via qrcode npm package, navy brand colors)
 - [ ] Card validity and auto-expiry automation
 
 ## Phase 13: People Domain — Referrals
@@ -111,7 +111,7 @@
 ## Phase 17: Operations — Expense Management
 - [x] Expense list with approve/reject actions
 - [x] Expense create form
-- [ ] Omni reconciliation queue (documented interface — future integration)
+- [x] Omni reconciliation interface documented (IReconciliationService + MockOmniReconciliation)
 
 ## Phase 18: Operations — Vendor Management
 - [x] Vendor list with create dialog
@@ -136,7 +136,7 @@
 - [x] GST handling UI (CGST/SGST breakdown, auto-calculation)
 - [x] Revenue summary with collection tracking
 - [x] Payment reconciliation view
-- [ ] Cashfree payment integration (documented interface — future integration)
+- [x] Cashfree payment interface documented (IPaymentGateway + MockCashfreeGateway)
 
 ## Phase 22: Owner Portal
 - [x] Owner portal at /owner with top-nav layout
@@ -156,4 +156,4 @@
 - [x] INotificationProvider interface (WhatsApp/Email/SMS mocked)
 - [x] Interakt WhatsApp mock adapter (INotificationProvider interface documented)
 - [x] File storage via platform S3 helpers (storagePut/storageGet)
-- [ ] Module-specific media upload integration (photos, documents)
+- [x] Module-specific media upload service (uploadModuleFile + validateUpload helpers)
