@@ -27,6 +27,11 @@ export default function Exits() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const { data: exits, isLoading } = trpc.exits.list.useQuery({});
   const [form, setForm] = useState({ personId: "", exitType: "resignation", reason: "", lastWorkingDay: "" });
+  const utils = trpc.useUtils();
+  const createExit = trpc.exits.create.useMutation({
+    onSuccess: () => { utils.exits.list.invalidate(); setDialogOpen(false); setForm({ personId: "", exitType: "resignation", reason: "", lastWorkingDay: "" }); toast.success("Exit initiated"); },
+    onError: (e) => toast.error(e.message),
+  });
 
   return (
     <div className="space-y-6">
@@ -58,7 +63,7 @@ export default function Exits() {
               </div>
               <div className="space-y-2"><Label>Last Working Day</Label><Input type="date" value={form.lastWorkingDay} onChange={(e) => setForm({ ...form, lastWorkingDay: e.target.value })} /></div>
               <div className="space-y-2"><Label>Reason</Label><Textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="Reason for exit..." rows={3} /></div>
-              <Button onClick={() => toast.info("Exit initiation coming soon — backend mutation ready")} className="w-full bg-navy text-white hover:bg-navy/90">Initiate Exit Process</Button>
+              <Button onClick={() => createExit.mutate({ personId: Number(form.personId), exitType: form.exitType as any, lastWorkingDay: form.lastWorkingDay || undefined, reason: form.reason || undefined })} disabled={!form.personId || createExit.isPending} className="w-full bg-navy text-white hover:bg-navy/90">{createExit.isPending ? "Processing..." : "Initiate Exit Process"}</Button>
             </div>
           </DialogContent>
         </Dialog>

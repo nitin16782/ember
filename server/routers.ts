@@ -509,6 +509,20 @@ export const appRouter = router({
     completions: protectedProcedure
       .input(z.object({ personId: z.number().optional(), moduleId: z.number().optional(), limit: z.number().optional() }).optional())
       .query(async ({ input }) => db.listTrainingCompletions(input ?? {})),
+    createModule: protectedProcedure
+      .input(z.object({ title: z.string().min(1), description: z.string().optional(), completionType: z.enum(["video", "quiz", "in_person", "document"]).optional(), passingScore: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createTrainingModule({ ...input, active: true });
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "training_module", entityId: id, afterValue: input });
+        return { id };
+      }),
+    recordCompletion: protectedProcedure
+      .input(z.object({ personId: z.number(), moduleId: z.number(), score: z.number().optional(), passed: z.boolean().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createTrainingCompletion({ ...input, completedAt: new Date() });
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "training_completion", entityId: id, afterValue: input });
+        return { id };
+      }),
   }),
 
   // ─── Exits ──────────────────────────────────────────────────────
@@ -516,6 +530,26 @@ export const appRouter = router({
     list: protectedProcedure
       .input(z.object({ status: z.string().optional(), limit: z.number().optional() }).optional())
       .query(async ({ input }) => db.listExits(input ?? {})),
+    create: protectedProcedure
+      .input(z.object({
+        personId: z.number(),
+        exitType: z.enum(["resignation", "termination", "absconding", "contract_end", "mutual"]),
+        lastWorkingDay: z.string().optional(),
+        reason: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createExit({ ...input, initiatedBy: ctx.user.id });
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "exit", entityId: id, afterValue: input });
+        return { id };
+      }),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: z.record(z.string(), z.unknown()) }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateExit(input.id, input.data);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "update", entityType: "exit", entityId: input.id, afterValue: input.data });
+        return { success: true };
+      }),
   }),
 
   // ─── Referrals ──────────────────────────────────────────────────
@@ -523,6 +557,199 @@ export const appRouter = router({
     list: protectedProcedure
       .input(z.object({ referrerPersonId: z.number().optional(), limit: z.number().optional() }).optional())
       .query(async ({ input }) => db.listReferrals(input ?? {})),
+    create: protectedProcedure
+      .input(z.object({
+        referrerPersonId: z.number(),
+        candidateName: z.string().min(1),
+        candidatePhone: z.string().min(1),
+        notes: z.string().optional(),
+        bountyAmount: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createReferral(input);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "referral", entityId: id, afterValue: input });
+        return { id };
+      }),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: z.record(z.string(), z.unknown()) }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateReferral(input.id, input.data);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "update", entityType: "referral", entityId: input.id, afterValue: input.data });
+        return { success: true };
+      }),
+  }),
+
+  // ─── ID Cards ──────────────────────────────────────────────────────
+  idCards: router({
+    list: protectedProcedure
+      .input(z.object({ personId: z.number().optional(), status: z.string().optional(), limit: z.number().optional() }).optional())
+      .query(async ({ input }) => db.listIdCards(input ?? {})),
+    create: protectedProcedure
+      .input(z.object({
+        personId: z.number(),
+        cardNumber: z.string().min(1),
+        qrToken: z.string().min(1),
+        designation: z.string().optional(),
+        propertyId: z.number().optional(),
+        validFrom: z.string().optional(),
+        validUntil: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createIdCard(input);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "id_card", entityId: id, afterValue: input });
+        return { id };
+      }),
+    revoke: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateIdCard(input.id, { status: "revoked" });
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "revoke", entityType: "id_card", entityId: input.id });
+        return { success: true };
+      }),
+  }),
+
+  // ─── Contracts ─────────────────────────────────────────────────────
+  contracts: router({
+    list: protectedProcedure
+      .input(z.object({ personId: z.number().optional(), status: z.string().optional(), limit: z.number().optional() }).optional())
+      .query(async ({ input }) => db.listContracts(input ?? {})),
+    create: protectedProcedure
+      .input(z.object({
+        personId: z.number(),
+        templateId: z.number().optional(),
+        contractType: z.string(),
+        startDate: z.string(),
+        endDate: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createContract(input);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "contract", entityId: id, afterValue: input });
+        return { id };
+      }),
+    templates: protectedProcedure.query(async () => db.listContractTemplates()),
+    createTemplate: protectedProcedure
+      .input(z.object({ name: z.string().min(1), contractType: z.string(), bodyHtml: z.string().optional(), variables: z.unknown().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createContractTemplate({ ...input, active: true });
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "contract_template", entityId: id, afterValue: input });
+        return { id };
+      }),
+  }),
+
+  // ─── Performance ───────────────────────────────────────────────────
+  performance: router({
+    reviews: protectedProcedure
+      .input(z.object({ personId: z.number().optional(), limit: z.number().optional() }).optional())
+      .query(async ({ input }) => db.listPerformanceReviews(input ?? {})),
+    createReview: protectedProcedure
+      .input(z.object({
+        personId: z.number(),
+        reviewPeriodStart: z.string(),
+        reviewPeriodEnd: z.string(),
+        reviewData: z.unknown().optional(),
+        outcome: z.enum(["increment", "promotion", "pip", "exit", "no_change"]).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createPerformanceReview({ ...input, reviewerId: ctx.user.id });
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "performance_review", entityId: id, afterValue: input });
+        return { id };
+      }),
+    feedback: protectedProcedure
+      .input(z.object({ personId: z.number().optional(), type: z.string().optional(), limit: z.number().optional() }).optional())
+      .query(async ({ input }) => db.listFeedback(input ?? {})),
+    createFeedback: protectedProcedure
+      .input(z.object({
+        personId: z.number(),
+        type: z.enum(["appreciation", "complaint", "observation"]),
+        description: z.string(),
+        propertyId: z.number().optional(),
+        severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+        source: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createFeedback(input);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "feedback", entityId: id, afterValue: input });
+        return { id };
+      }),
+  }),
+
+  // ─── Onboarding ────────────────────────────────────────────────────
+  onboarding: router({
+    list: protectedProcedure
+      .input(z.object({ personId: z.number().optional(), status: z.string().optional(), limit: z.number().optional() }).optional())
+      .query(async ({ input }) => db.listOnboardingChecklists(input ?? {})),
+    create: protectedProcedure
+      .input(z.object({
+        personId: z.number(),
+        templateName: z.string().optional(),
+        items: z.unknown(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createOnboardingChecklist(input);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "onboarding_checklist", entityId: id, afterValue: input });
+        return { id };
+      }),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: z.record(z.string(), z.unknown()) }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateOnboardingChecklist(input.id, input.data);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "update", entityType: "onboarding_checklist", entityId: input.id, afterValue: input.data });
+        return { success: true };
+      }),
+  }),
+
+  // ─── Breakages ─────────────────────────────────────────────────────
+  breakages: router({
+    list: protectedProcedure
+      .input(z.object({ propertyId: z.number().optional(), limit: z.number().optional() }).optional())
+      .query(async ({ input }) => db.listBreakages(input ?? {})),
+    create: protectedProcedure
+      .input(z.object({
+        propertyId: z.number(),
+        inventoryItemId: z.number().optional(),
+        description: z.string().min(1),
+        attributedTo: z.number().optional(),
+        attributionStatus: z.enum(["unattributed", "associate", "guest", "accidental", "wear"]).optional(),
+        estimatedCost: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createBreakage(input);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "breakage", entityId: id, afterValue: input });
+        return { id };
+      }),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: z.record(z.string(), z.unknown()) }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateBreakage(input.id, input.data);
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "update", entityType: "breakage", entityId: input.id, afterValue: input.data });
+        return { success: true };
+      }),
+  }),
+
+  // ─── Leave Policies ────────────────────────────────────────────────
+  leavePolicies: router({
+    list: protectedProcedure.query(async () => db.listLeavePolicies()),
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        leaveType: z.string(),
+        annualQuota: z.number(),
+        accrualType: z.enum(["monthly", "quarterly", "annual", "none"]).optional(),
+        carryForwardMax: z.number().optional(),
+        encashable: z.boolean().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await db.createLeavePolicy({ ...input, active: true });
+        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "leave_policy", entityId: id, afterValue: input });
+        return { id };
+      }),
+  }),
+
+  // ─── Monthly Reports ───────────────────────────────────────────────
+  monthlyReports: router({
+    list: protectedProcedure
+      .input(z.object({ propertyId: z.number().optional(), ownerId: z.number().optional(), limit: z.number().optional() }).optional())
+      .query(async ({ input }) => db.listMonthlyReports(input ?? {})),
   }),
 
   // ─── Requests (Owner Portal) ───────────────────────────────────

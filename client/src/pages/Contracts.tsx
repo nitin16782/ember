@@ -1,24 +1,15 @@
+import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, FileSignature, Plus, Clock, CheckCircle2, XCircle, Send } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
-
-const mockContracts = [
-  { id: 1, personName: "Rajesh Kumar", templateCode: "EMP_OFFER", status: "signed" as const, createdAt: "2026-04-15", signedAt: "2026-04-18" },
-  { id: 2, personName: "Priya Sharma", templateCode: "EMP_OFFER", status: "sent" as const, createdAt: "2026-05-01", signedAt: null },
-  { id: 3, personName: "Amit Patel", templateCode: "NDA", status: "draft" as const, createdAt: "2026-05-10", signedAt: null },
-  { id: 4, personName: "Sunita Devi", templateCode: "CONTRACTOR", status: "active" as const, createdAt: "2026-03-20", signedAt: "2026-03-22" },
-  { id: 5, personName: "Vikram Singh", templateCode: "EMP_OFFER", status: "expired" as const, createdAt: "2025-12-01", signedAt: "2025-12-05" },
-];
-
-const mockTemplates = [
-  { id: 1, code: "EMP_OFFER", name: "Employment Offer Letter", version: 3, fields: 12, lastUpdated: "2026-04-01" },
-  { id: 2, code: "NDA", name: "Non-Disclosure Agreement", version: 2, fields: 6, lastUpdated: "2026-03-15" },
-  { id: 3, code: "CONTRACTOR", name: "Contractor Agreement", version: 1, fields: 15, lastUpdated: "2026-02-20" },
-  { id: 4, code: "SEPARATION", name: "Separation Agreement", version: 1, fields: 8, lastUpdated: "2026-01-10" },
-];
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
   draft: { label: "Draft", color: "bg-gray-100 text-gray-600", icon: Clock },
@@ -30,6 +21,16 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
 };
 
 export default function Contracts() {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const { data: contracts, isLoading } = trpc.contracts.list.useQuery({});
+  const { data: templates } = trpc.contracts.templates.useQuery();
+  const [form, setForm] = useState({ personId: "", contractType: "employment", templateId: "", startDate: "", endDate: "" });
+  const utils = trpc.useUtils();
+  const createContract = trpc.contracts.create.useMutation({
+    onSuccess: () => { utils.contracts.list.invalidate(); setDialogOpen(false); setForm({ personId: "", contractType: "employment", templateId: "", startDate: "", endDate: "" }); toast.success("Contract created"); },
+    onError: (e) => toast.error(e.message),
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -37,7 +38,55 @@ export default function Contracts() {
           <h2 className="font-display text-xl font-semibold text-navy">Contracts & Documents</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Template-driven generation with digital signatures</p>
         </div>
-        <Button className="bg-navy text-white hover:bg-navy/90" onClick={() => toast.info("Contract generation coming soon")}><Plus className="h-4 w-4 mr-2" />Generate Contract</Button>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-navy text-white hover:bg-navy/90"><Plus className="h-4 w-4 mr-2" />Generate Contract</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle className="font-display text-navy">Generate Contract</DialogTitle></DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2"><Label>Person ID *</Label><Input type="number" value={form.personId} onChange={(e) => setForm({ ...form, personId: e.target.value })} /></div>
+              <div className="space-y-2">
+                <Label>Contract Type *</Label>
+                <Select value={form.contractType} onValueChange={(v) => setForm({ ...form, contractType: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="employment">Employment</SelectItem>
+                    <SelectItem value="contractor">Contractor</SelectItem>
+                    <SelectItem value="nda">NDA</SelectItem>
+                    <SelectItem value="separation">Separation</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {templates && templates.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Template (optional)</Label>
+                  <Select value={form.templateId} onValueChange={(v) => setForm({ ...form, templateId: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select template..." /></SelectTrigger>
+                    <SelectContent>
+                      {templates.map((t: any) => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2"><Label>Start Date *</Label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
+                <div className="space-y-2"><Label>End Date</Label><Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></div>
+              </div>
+              <Button
+                onClick={() => createContract.mutate({
+                  personId: Number(form.personId),
+                  contractType: form.contractType,
+                  templateId: form.templateId ? Number(form.templateId) : undefined,
+                  startDate: form.startDate,
+                  endDate: form.endDate || undefined,
+                })}
+                disabled={!form.personId || !form.startDate || createContract.isPending}
+                className="w-full bg-navy text-white hover:bg-navy/90"
+              >{createContract.isPending ? "Creating..." : "Generate Contract"}</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Tabs defaultValue="contracts" className="space-y-4">
@@ -48,17 +97,17 @@ export default function Contracts() {
         </TabsList>
 
         <TabsContent value="contracts" className="space-y-2">
-          {mockContracts.map((c) => {
+          {contracts?.map((c: any) => {
             const config = statusConfig[c.status] || statusConfig.draft;
             const Icon = config.icon;
             return (
-              <Card key={c.id} className="border-border/50 hover:shadow-sm transition-shadow cursor-pointer" onClick={() => toast.info(`Opening contract for ${c.personName}`)}>
+              <Card key={c.id} className="border-border/50 hover:shadow-sm transition-shadow cursor-pointer" onClick={() => toast.info(`Opening contract #${c.id}`)}>
                 <CardContent className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-lg bg-navy/5 flex items-center justify-center"><FileText className="h-4 w-4 text-navy" /></div>
                     <div>
-                      <p className="font-medium text-sm">{c.personName}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{c.templateCode} · Created {c.createdAt}{c.signedAt ? ` · Signed ${c.signedAt}` : ""}</p>
+                      <p className="font-medium text-sm">Person #{c.personId} — {c.contractType}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Start: {c.startDate}{c.endDate ? ` · End: ${c.endDate}` : ""} · Created {String(c.createdAt).slice(0, 10)}</p>
                     </div>
                   </div>
                   <Badge className={config.color}><Icon className="h-3 w-3 mr-1" />{config.label}</Badge>
@@ -66,23 +115,29 @@ export default function Contracts() {
               </Card>
             );
           })}
+          {!isLoading && (!contracts || contracts.length === 0) && (
+            <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><FileText className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" /><p className="text-sm text-muted-foreground">No contracts yet</p></CardContent></Card>
+          )}
         </TabsContent>
 
         <TabsContent value="templates" className="space-y-2">
-          {mockTemplates.map((t) => (
+          {templates?.map((t: any) => (
             <Card key={t.id} className="border-border/50 hover:shadow-sm transition-shadow cursor-pointer" onClick={() => toast.info(`Opening template: ${t.name}`)}>
               <CardContent className="p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-9 w-9 rounded-lg bg-gold/10 flex items-center justify-center"><FileSignature className="h-4 w-4 text-gold" /></div>
                   <div>
                     <p className="font-medium text-sm">{t.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Code: {t.code} · v{t.version} · {t.fields} merge fields · Updated {t.lastUpdated}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Type: {t.contractType} · Created {String(t.createdAt).slice(0, 10)}</p>
                   </div>
                 </div>
-                <Badge variant="outline" className="text-xs">v{t.version}</Badge>
+                <Badge variant="outline" className="text-xs">{t.active ? "Active" : "Inactive"}</Badge>
               </CardContent>
             </Card>
           ))}
+          {(!templates || templates.length === 0) && (
+            <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><FileSignature className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" /><p className="text-sm text-muted-foreground">No templates yet</p></CardContent></Card>
+          )}
         </TabsContent>
 
         <TabsContent value="signing">

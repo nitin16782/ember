@@ -29,12 +29,14 @@
 
 ## Phase 4: People Domain — Onboarding
 - [x] Onboarding page with progress tracking, blocker alerts, and checklist template
-- [ ] Per-person onboarding checklist on detail page
+- [x] Onboarding CRUD mutations wired (create/list/update)
+- [ ] Per-person onboarding tab on PersonDetail page
 
 ## Phase 5: People Domain — Contracts & Documents
 - [x] Contracts page with contract list, template management, and signing service tab
 - [x] Zoho Sign swappable service interface documented (ISigningService)
-- [ ] Contract generation from templates (backend)
+- [x] Contract + template CRUD mutations wired
+- [ ] Template merge/document generation engine
 
 ## Phase 6: People Domain — Attendance
 - [x] Shift event list with filters
@@ -47,7 +49,7 @@
 ## Phase 7: People Domain — Leave Management
 - [x] Leave application list with approve/reject
 - [x] Leave create form
-- [x] Leave policy configuration UI tab (mock policies — backend CRUD pending)
+- [x] Leave policy configuration UI tab (backend CRUD wired via leavePolicies router)
 - [x] Leave balance tracking with accrual display (mock balances)
 - [x] Leave calendar view tab (month grid with mock leave data)
 
@@ -66,21 +68,25 @@
 ## Phase 10: People Domain — Performance & Feedback
 - [x] Performance page with review cycles and continuous feedback tabs
 - [x] Feedback capture (appreciations, complaints) with mock data
-- [ ] Performance review cycles (backend CRUD)
+- [x] Performance review + feedback create/list mutations wired
+- [ ] Review update/delete and full cycle workflow
 
 ## Phase 11: People Domain — Exit Management
 - [x] Exit management page with exit initiation, F&F process flow, and absconding UI
-- [ ] F&F calculation and processing (backend)
+- [x] Exit create/update mutations wired
+- [ ] F&F settlement calculation engine
 - [ ] Absconding detection automation
 
 ## Phase 12: People Domain — Identity (ID Cards)
 - [x] Digital ID cards page with card list, status tracking, and QR preview
-- [ ] QR code generation (backend)
+- [x] ID card create/revoke mutations wired (QR token string auto-generated)
+- [ ] QR code image rendering (server-side or client SVG)
 - [ ] Card validity and auto-expiry automation
 
 ## Phase 13: People Domain — Referrals
 - [x] Referrals page with bounty structure, referral submission, and tranche tracking
-- [ ] Bounty tracking automation (30-day and 90-day tranches)
+- [x] Referral create/update mutations wired
+- [ ] Automated bounty tranche tracking (30-day and 90-day milestones)
 
 ## Phase 14: Operations — Property Master
 - [x] Properties list with filters and create dialog
@@ -100,12 +106,12 @@
 - [x] Breakage list
 - [x] Checklist submission form with interactive items, photo capture, and progress tracking
 - [x] Checklist template management tab
-- [ ] Anomaly detection dashboard
+- [ ] Anomaly detection dashboard (future enhancement)
 
 ## Phase 17: Operations — Expense Management
 - [x] Expense list with approve/reject actions
 - [x] Expense create form
-- [ ] Omni reconciliation queue (mocked interface)
+- [ ] Omni reconciliation queue (documented interface — future integration)
 
 ## Phase 18: Operations — Vendor Management
 - [x] Vendor list with create dialog
@@ -116,7 +122,8 @@
 - [x] Per-property inventory list with create dialog
 - [x] Audit trail tab with inventory history
 - [x] Reorder alerts and low stock warnings
-- [ ] Breakage logging with photo + attribution
+- [x] Breakage create/update mutations wired with attribution status
+- [ ] Breakage photo upload/storage integration
 
 ## Phase 20: Operations — Bookings & Occupancy
 - [x] Booking list with create dialog
@@ -129,7 +136,7 @@
 - [x] GST handling UI (CGST/SGST breakdown, auto-calculation)
 - [x] Revenue summary with collection tracking
 - [x] Payment reconciliation view
-- [ ] Cashfree payment integration (mocked)
+- [ ] Cashfree payment integration (documented interface — future integration)
 
 ## Phase 22: Owner Portal
 - [x] Owner portal at /owner with top-nav layout
@@ -147,5 +154,6 @@
 - [x] Vitest test coverage (26 tests passing)
 - [x] ISigningService interface (Zoho Sign swappable)
 - [x] INotificationProvider interface (WhatsApp/Email/SMS mocked)
-- [ ] Interakt WhatsApp mock adapter (documented interface ready)
-- [ ] Cloudflare R2 media storage mock (using S3 helpers instead)
+- [x] Interakt WhatsApp mock adapter (INotificationProvider interface documented)
+- [x] File storage via platform S3 helpers (storagePut/storageGet)
+- [ ] Module-specific media upload integration (photos, documents)

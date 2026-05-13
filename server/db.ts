@@ -627,3 +627,242 @@ export async function getDashboardStats() {
     leaves: { pending: Number(pendingLeaves[0]?.cnt ?? 0) },
   };
 }
+
+// ─── Exits (CRUD) ──────────────────────────────────────────────────
+export async function createExit(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(exits).values(data);
+  return result[0].insertId;
+}
+
+export async function updateExit(id: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(exits).set(data).where(eq(exits.id, id));
+}
+
+// ─── Referrals (CRUD) ──────────────────────────────────────────────
+export async function createReferral(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(referrals).values(data);
+  return result[0].insertId;
+}
+
+export async function updateReferral(id: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(referrals).set(data).where(eq(referrals.id, id));
+}
+
+// ─── ID Cards (CRUD) ──────────────────────────────────────────────
+export async function listIdCards(opts?: { personId?: number; status?: string; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (opts?.personId) conditions.push(eq(idCards.personId, opts.personId));
+  if (opts?.status) conditions.push(eq(idCards.status, opts.status as any));
+  const query = db.select().from(idCards);
+  const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
+  return filtered.orderBy(desc(idCards.createdAt)).limit(opts?.limit ?? 50);
+}
+
+export async function createIdCard(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(idCards).values(data);
+  return result[0].insertId;
+}
+
+export async function updateIdCard(id: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(idCards).set(data).where(eq(idCards.id, id));
+}
+
+// ─── Contracts (CRUD) ──────────────────────────────────────────────
+export async function listContracts(opts?: { personId?: number; status?: string; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (opts?.personId) conditions.push(eq(contracts.personId, opts.personId));
+  if (opts?.status) conditions.push(eq(contracts.status, opts.status as any));
+  const query = db.select().from(contracts);
+  const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
+  return filtered.orderBy(desc(contracts.createdAt)).limit(opts?.limit ?? 50);
+}
+
+export async function createContract(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(contracts).values(data);
+  return result[0].insertId;
+}
+
+export async function updateContract(id: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(contracts).set(data).where(eq(contracts.id, id));
+}
+
+// ─── Contract Templates ────────────────────────────────────────────
+export async function listContractTemplates() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(contractTemplates).where(eq(contractTemplates.active, true));
+}
+
+export async function createContractTemplate(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(contractTemplates).values(data);
+  return result[0].insertId;
+}
+
+// ─── Performance Reviews (CRUD) ────────────────────────────────────
+export async function listPerformanceReviews(opts?: { personId?: number; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (opts?.personId) conditions.push(eq(performanceReviews.personId, opts.personId));
+  const query = db.select().from(performanceReviews);
+  const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
+  return filtered.orderBy(desc(performanceReviews.createdAt)).limit(opts?.limit ?? 50);
+}
+
+export async function createPerformanceReview(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(performanceReviews).values(data);
+  return result[0].insertId;
+}
+
+// ─── Feedback (CRUD) ───────────────────────────────────────────────
+export async function listFeedback(opts?: { personId?: number; type?: string; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (opts?.personId) conditions.push(eq(feedback.personId, opts.personId));
+  if (opts?.type) conditions.push(eq(feedback.type, opts.type as any));
+  const query = db.select().from(feedback);
+  const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
+  return filtered.orderBy(desc(feedback.createdAt)).limit(opts?.limit ?? 50);
+}
+
+export async function createFeedback(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(feedback).values(data);
+  return result[0].insertId;
+}
+
+// ─── Onboarding Checklists (CRUD) ──────────────────────────────────
+export async function listOnboardingChecklists(opts?: { personId?: number; status?: string; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (opts?.personId) conditions.push(eq(onboardingChecklists.personId, opts.personId));
+  if (opts?.status) conditions.push(eq(onboardingChecklists.status, opts.status as any));
+  const query = db.select().from(onboardingChecklists);
+  const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
+  return filtered.orderBy(desc(onboardingChecklists.createdAt)).limit(opts?.limit ?? 50);
+}
+
+export async function createOnboardingChecklist(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(onboardingChecklists).values(data);
+  return result[0].insertId;
+}
+
+export async function updateOnboardingChecklist(id: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(onboardingChecklists).set(data).where(eq(onboardingChecklists.id, id));
+}
+
+// ─── Breakages (CRUD) ──────────────────────────────────────────────
+export async function createBreakage(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(breakages).values(data);
+  return result[0].insertId;
+}
+
+export async function updateBreakage(id: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(breakages).set(data).where(eq(breakages.id, id));
+}
+
+// ─── Training Module CRUD ──────────────────────────────────────────
+export async function createTrainingModule(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(trainingModules).values(data);
+  return result[0].insertId;
+}
+
+export async function createTrainingCompletion(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(trainingCompletions).values(data);
+  return result[0].insertId;
+}
+
+// ─── Monthly Reports ───────────────────────────────────────────────
+export async function listMonthlyReports(opts?: { propertyId?: number; ownerId?: number; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (opts?.propertyId) conditions.push(eq(monthlyReports.propertyId, opts.propertyId));
+  // monthlyReports has no ownerId column — filter by propertyId only
+  const query = db.select().from(monthlyReports);
+  const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
+  return filtered.orderBy(desc(monthlyReports.createdAt)).limit(opts?.limit ?? 24);
+}
+
+// ─── Leave Policies (CRUD) ─────────────────────────────────────────
+export async function createLeavePolicy(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(leavePolicies).values(data);
+  return result[0].insertId;
+}
+
+export async function updateLeavePolicy(id: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(leavePolicies).set(data).where(eq(leavePolicies.id, id));
+}
+
+// ─── Fee Structures ────────────────────────────────────────────────
+export async function listFeeStructures(_propertyId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  // feeStructures is a global table — not per-property
+  return db.select().from(feeStructures);
+}
+
+export async function createFeeStructure(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(feeStructures).values(data);
+  return result[0].insertId;
+}
+
+// ─── SLAs ──────────────────────────────────────────────────────────
+export async function listSlas(_propertyId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  // slas is a global table — not per-property
+  return db.select().from(slas);
+}
+
+export async function createSla(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(slas).values(data);
+  return result[0].insertId;
+}
