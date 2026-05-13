@@ -1,14 +1,24 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Redirect, Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
+import { OwnerLayout } from "./components/OwnerLayout";
+import { RequireAuth } from "./components/RequireAuth";
 import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
 
-// Lazy-load all pages
+// Auth pages
+const StaffLogin = lazy(() => import("./pages/auth/StaffLogin"));
+const AssociateLogin = lazy(() => import("./pages/auth/AssociateLogin"));
+const OwnerLogin = lazy(() => import("./pages/auth/OwnerLogin"));
+const MagicLinkRequest = lazy(() => import("./pages/auth/MagicLinkRequest"));
+const MagicLinkConsume = lazy(() => import("./pages/auth/MagicLinkConsume"));
+const SetPassword = lazy(() => import("./pages/auth/SetPassword"));
+
+// App pages
 const Home = lazy(() => import("./pages/Home"));
 const People = lazy(() => import("./pages/People"));
 const PersonDetail = lazy(() => import("./pages/PersonDetail"));
@@ -50,48 +60,81 @@ function PageLoader() {
 function Router() {
   return (
     <Switch>
-      {/* Owner Portal uses its own top-nav layout */}
-      <Route path="/owner">
-        <Suspense fallback={<PageLoader />}><OwnerPortal /></Suspense>
+      {/* Public auth routes — no layout */}
+      <Route path="/login">
+        <Suspense fallback={<PageLoader />}><StaffLogin /></Suspense>
       </Route>
-      {/* All other routes use the DashboardLayout */}
+      <Route path="/login/magic">
+        <Suspense fallback={<PageLoader />}><MagicLinkRequest /></Suspense>
+      </Route>
+      <Route path="/login/associate">
+        <Suspense fallback={<PageLoader />}><AssociateLogin /></Suspense>
+      </Route>
+      <Route path="/login/owner">
+        <Suspense fallback={<PageLoader />}><OwnerLogin /></Suspense>
+      </Route>
+      <Route path="/auth/magic">
+        <Suspense fallback={<PageLoader />}><MagicLinkConsume /></Suspense>
+      </Route>
+      <Route path="/auth/set-password">
+        <RequireAuth>
+          <Suspense fallback={<PageLoader />}><SetPassword /></Suspense>
+        </RequireAuth>
+      </Route>
+
+      {/* Owner portal — separate layout, role-gated */}
+      <Route path="/portal/:rest*">
+        <RequireAuth allowedRoles={["owner_portal"]} loginPath="/login/owner">
+          <OwnerLayout>
+            <Suspense fallback={<PageLoader />}><OwnerPortal /></Suspense>
+          </OwnerLayout>
+        </RequireAuth>
+      </Route>
+      {/* Legacy redirect: /owner → /portal */}
+      <Route path="/owner">
+        <Redirect to="/portal" />
+      </Route>
+
+      {/* Staff routes — DashboardLayout, all gated */}
       <Route>
-        <DashboardLayout>
-          <Suspense fallback={<PageLoader />}>
-            <Switch>
-          <Route path="/" component={Home} />
-          <Route path="/people" component={People} />
-          <Route path="/people/:id" component={PersonDetail} />
-          <Route path="/hiring" component={Hiring} />
-          <Route path="/onboarding" component={Onboarding} />
-          <Route path="/contracts" component={Contracts} />
-          <Route path="/attendance" component={Attendance} />
-          <Route path="/leave" component={Leave} />
-          <Route path="/payroll" component={Payroll} />
-          <Route path="/training" component={Training} />
-          <Route path="/performance" component={Performance} />
-          <Route path="/exits" component={Exits} />
-          <Route path="/id-cards" component={IdCards} />
-          <Route path="/referrals" component={Referrals} />
-          <Route path="/properties" component={Properties} />
-          <Route path="/properties/:id" component={PropertyDetail} />
-          <Route path="/roster" component={Roster} />
-          <Route path="/daily-ops" component={DailyOps} />
-          <Route path="/expenses" component={Expenses} />
-          <Route path="/vendors" component={Vendors} />
-          <Route path="/inventory" component={Inventory} />
-          <Route path="/bookings" component={Bookings} />
-          <Route path="/invoices" component={Invoices} />
-          <Route path="/payments" component={Payments} />
-          <Route path="/notifications" component={Notifications} />
-          <Route path="/anomalies" component={Anomalies} />
-          <Route path="/audit-log" component={AuditLog} />
-          <Route path="/settings" component={Settings} />
-          <Route path="/404" component={NotFound} />
-              <Route component={NotFound} />
-            </Switch>
-          </Suspense>
-        </DashboardLayout>
+        <RequireAuth>
+          <DashboardLayout>
+            <Suspense fallback={<PageLoader />}>
+              <Switch>
+                <Route path="/" component={Home} />
+                <Route path="/people" component={People} />
+                <Route path="/people/:id" component={PersonDetail} />
+                <Route path="/hiring" component={Hiring} />
+                <Route path="/onboarding" component={Onboarding} />
+                <Route path="/contracts" component={Contracts} />
+                <Route path="/attendance" component={Attendance} />
+                <Route path="/leave" component={Leave} />
+                <Route path="/payroll" component={Payroll} />
+                <Route path="/training" component={Training} />
+                <Route path="/performance" component={Performance} />
+                <Route path="/exits" component={Exits} />
+                <Route path="/id-cards" component={IdCards} />
+                <Route path="/referrals" component={Referrals} />
+                <Route path="/properties" component={Properties} />
+                <Route path="/properties/:id" component={PropertyDetail} />
+                <Route path="/roster" component={Roster} />
+                <Route path="/daily-ops" component={DailyOps} />
+                <Route path="/expenses" component={Expenses} />
+                <Route path="/vendors" component={Vendors} />
+                <Route path="/inventory" component={Inventory} />
+                <Route path="/bookings" component={Bookings} />
+                <Route path="/invoices" component={Invoices} />
+                <Route path="/payments" component={Payments} />
+                <Route path="/notifications" component={Notifications} />
+                <Route path="/anomalies" component={Anomalies} />
+                <Route path="/audit-log" component={AuditLog} />
+                <Route path="/settings" component={Settings} />
+                <Route path="/404" component={NotFound} />
+                <Route component={NotFound} />
+              </Switch>
+            </Suspense>
+          </DashboardLayout>
+        </RequireAuth>
       </Route>
     </Switch>
   );
