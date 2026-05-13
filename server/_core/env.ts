@@ -22,10 +22,15 @@ export const ENV = {
   r2Bucket: process.env.R2_BUCKET ?? "ember-dev",
   r2PublicUrl: process.env.R2_PUBLIC_URL ?? "",
 
-  // MSG91 (used by Prompt 4)
+  // MSG91 — SMS / OTP (shared-defaults path; DLT-branded headers in Phase 7)
   msg91AuthKey: process.env.MSG91_AUTH_KEY ?? "",
+  msg91DefaultCountryCode: process.env.MSG91_DEFAULT_COUNTRY_CODE ?? "91",
+  msg91OtpExpiryMinutes: parseInt(process.env.MSG91_OTP_EXPIRY_MINUTES ?? "10", 10),
+  msg91OtpLength: parseInt(process.env.MSG91_OTP_LENGTH ?? "6", 10),
+
+  // Optional — only set in Phase 7 when DLT-approved templates/sender exist
   msg91TemplateIdOtp: process.env.MSG91_TEMPLATE_ID_OTP ?? "",
-  msg91SenderId: process.env.MSG91_SENDER_ID ?? "FIREBR",
+  msg91SenderId: process.env.MSG91_SENDER_ID ?? "",
 
   // Email (used by Prompt 3)
   resendApiKey: process.env.RESEND_API_KEY ?? "",
@@ -40,6 +45,7 @@ export const ENV = {
 
 export function validateEnv(): void {
   if (!ENV.isProduction) return;
+
   const required: Array<[string, string]> = [
     ["DATABASE_URL", ENV.databaseUrl],
     ["JWT_SECRET", ENV.jwtSecret],
@@ -47,5 +53,16 @@ export function validateEnv(): void {
   const missing = required.filter(([_, v]) => !v).map(([k]) => k);
   if (missing.length > 0) {
     throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+  }
+
+  // Optional — degrade gracefully but log so we notice in prod.
+  const warnings: Array<[string, string]> = [
+    ["MSG91_AUTH_KEY", ENV.msg91AuthKey],
+    ["RESEND_API_KEY", ENV.resendApiKey],
+    ["R2_ACCESS_KEY_ID", ENV.r2AccessKeyId],
+  ];
+  const warned = warnings.filter(([_, v]) => !v).map(([k]) => k);
+  if (warned.length > 0) {
+    console.warn(`[env] Missing optional env vars (degraded mode): ${warned.join(", ")}`);
   }
 }
