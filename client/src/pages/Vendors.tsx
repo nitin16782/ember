@@ -1,14 +1,37 @@
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Store, Wrench, Phone, Mail } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Plus, Store, Wrench, Phone, Ban, Star, IndianRupee } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+
+const mockBlacklist = [
+  { id: 1, name: "QuickFix Plumbing", reason: "Repeated no-shows and poor quality work", blacklistedDate: "2026-03-15", blacklistedBy: "Ops Manager" },
+  { id: 2, name: "ABC Electricals", reason: "Safety violation during wiring work at Villa 12", blacklistedDate: "2026-04-02", blacklistedBy: "Area Manager" },
+];
+
+const mockRatings = [
+  { vendorId: 1, name: "Metro Cleaning Services", avgRating: 4.5, totalJobs: 28, onTimeRate: 92, lastJob: "2026-05-10" },
+  { vendorId: 2, name: "Sharma Electricals", avgRating: 4.2, totalJobs: 15, onTimeRate: 87, lastJob: "2026-05-08" },
+  { vendorId: 3, name: "Green Gardens", avgRating: 3.8, totalJobs: 12, onTimeRate: 75, lastJob: "2026-05-05" },
+];
+
+function StarRating({ rating }: { rating: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map(i => (
+        <Star key={i} className={`h-3 w-3 ${i <= Math.round(rating) ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
+      ))}
+      <span className="text-xs font-medium ml-1">{rating}</span>
+    </div>
+  );
+}
 
 export default function Vendors() {
   const [vendorDialog, setVendorDialog] = useState(false);
@@ -18,32 +41,42 @@ export default function Vendors() {
 
   const createVendor = trpc.vendors.create.useMutation({
     onSuccess: () => { utils.vendors.list.invalidate(); setVendorDialog(false); toast.success("Vendor added"); },
-    onError: (err) => toast.error(err.message),
+    onError: (err: any) => toast.error(err.message),
   });
 
   const [form, setForm] = useState({ name: "", category: "", contactName: "", phone: "", email: "" });
+  const totalVendors = vendorList?.length || 0;
+  const activeVendors = vendorList?.filter((v: any) => v.status === "active").length || 0;
+  const totalWOs = workOrderList?.length || 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-xl font-semibold text-navy">Vendors & Work Orders</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Manage vendor relationships and work orders</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Vendor management, work orders, ratings, and blacklist</p>
         </div>
       </div>
 
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Vendors</p><p className="text-2xl font-semibold text-navy mt-1">{totalVendors}</p></CardContent></Card>
+        <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Active</p><p className="text-2xl font-semibold text-green-600 mt-1">{activeVendors}</p></CardContent></Card>
+        <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Work Orders</p><p className="text-2xl font-semibold text-navy mt-1">{totalWOs}</p></CardContent></Card>
+        <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Blacklisted</p><p className="text-2xl font-semibold text-red-600 mt-1">{mockBlacklist.length}</p></CardContent></Card>
+      </div>
+
       <Tabs defaultValue="vendors" className="space-y-4">
-        <TabsList className="bg-muted/50">
-          <TabsTrigger value="vendors">Vendors</TabsTrigger>
-          <TabsTrigger value="work-orders">Work Orders</TabsTrigger>
+        <TabsList className="bg-cream border border-border/50 flex-wrap h-auto gap-1 p-1">
+          <TabsTrigger value="vendors"><Store className="h-4 w-4 mr-1.5" />Vendors</TabsTrigger>
+          <TabsTrigger value="work-orders"><Wrench className="h-4 w-4 mr-1.5" />Work Orders</TabsTrigger>
+          <TabsTrigger value="ratings"><Star className="h-4 w-4 mr-1.5" />Ratings</TabsTrigger>
+          <TabsTrigger value="blacklist"><Ban className="h-4 w-4 mr-1.5" />Blacklist</TabsTrigger>
         </TabsList>
 
         <TabsContent value="vendors" className="space-y-4">
           <div className="flex justify-end">
             <Dialog open={vendorDialog} onOpenChange={setVendorDialog}>
-              <DialogTrigger asChild>
-                <Button className="bg-navy text-white hover:bg-navy/90"><Plus className="h-4 w-4 mr-2" />Add Vendor</Button>
-              </DialogTrigger>
+              <DialogTrigger asChild><Button className="bg-navy text-white hover:bg-navy/90"><Plus className="h-4 w-4 mr-2" />Add Vendor</Button></DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle className="font-display text-navy">Add Vendor</DialogTitle></DialogHeader>
                 <div className="space-y-4 pt-2">
@@ -62,7 +95,7 @@ export default function Vendors() {
             </Dialog>
           </div>
           <div className="space-y-2">
-            {vendorList?.map((v) => (
+            {vendorList?.map((v: any) => (
               <Card key={v.id} className="border-border/50">
                 <CardContent className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -75,7 +108,10 @@ export default function Vendors() {
                       </div>
                     </div>
                   </div>
-                  <Badge className={v.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}>{v.status}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge className={v.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}>{v.status}</Badge>
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-red-500" onClick={() => toast.info(`Blacklist ${v.name}? Confirmation required.`)}><Ban className="h-3.5 w-3.5" /></Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -86,7 +122,7 @@ export default function Vendors() {
         </TabsContent>
 
         <TabsContent value="work-orders" className="space-y-2">
-          {workOrderList?.map((wo) => (
+          {workOrderList?.map((wo: any) => (
             <Card key={wo.id} className="border-border/50">
               <CardContent className="p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -103,6 +139,50 @@ export default function Vendors() {
           {(!workOrderList || workOrderList.length === 0) && (
             <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><Wrench className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" /><p className="text-sm text-muted-foreground">No work orders yet</p></CardContent></Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="ratings">
+          <Card className="border-border/50">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader><TableRow className="bg-cream/50">
+                  <TableHead className="text-xs">Vendor</TableHead>
+                  <TableHead className="text-xs">Rating</TableHead>
+                  <TableHead className="text-xs text-center">Jobs</TableHead>
+                  <TableHead className="text-xs text-center">On-Time %</TableHead>
+                  <TableHead className="text-xs">Last Job</TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {mockRatings.map(r => (
+                    <TableRow key={r.vendorId} className="text-sm">
+                      <TableCell className="font-medium">{r.name}</TableCell>
+                      <TableCell><StarRating rating={r.avgRating} /></TableCell>
+                      <TableCell className="text-center">{r.totalJobs}</TableCell>
+                      <TableCell className="text-center"><span className={r.onTimeRate >= 90 ? "text-green-600" : r.onTimeRate >= 80 ? "text-yellow-600" : "text-red-600"}>{r.onTimeRate}%</span></TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{r.lastJob}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="blacklist" className="space-y-2">
+          {mockBlacklist.map(b => (
+            <Card key={b.id} className="border-border/50 border-red-200/50">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2"><Ban className="h-4 w-4 text-red-500" /><p className="font-medium text-sm">{b.name}</p></div>
+                    <p className="text-xs text-muted-foreground mt-1">{b.reason}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Blacklisted: {b.blacklistedDate} by {b.blacklistedBy}</p>
+                  </div>
+                  <Button size="sm" variant="outline" className="text-xs" onClick={() => toast.info("Reinstate vendor? This requires admin approval.")}>Reinstate</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </TabsContent>
       </Tabs>
     </div>

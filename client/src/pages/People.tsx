@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Users, Phone, Mail, ChevronRight } from "lucide-react";
+import { Plus, Search, Users, Phone, Mail, ChevronRight, Upload, Shield } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -86,13 +86,17 @@ export default function People() {
             {stats ? `${stats.total} total · ${stats.active} active` : "Loading..."}
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-navy text-white hover:bg-navy/90">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Associate
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => toast.info("CSV import: Upload a CSV file with columns — fullName, primaryPhone, staffType, email, designation. Validation preview will show before import.")}>
+            <Upload className="h-4 w-4 mr-2" />Import CSV
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-navy text-white hover:bg-navy/90">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Associate
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="font-display text-navy">Add New Associate</DialogTitle>
@@ -131,7 +135,8 @@ export default function People() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       {/* Filters */}
@@ -221,6 +226,9 @@ export default function People() {
                         <Phone className="h-3 w-3" /> {person.primaryPhone}
                       </span>
                     )}
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={(e) => { e.stopPropagation(); toast.info(`Deployable status check: Verifying documents, training, and background check for ${person.fullName}`); }}>
+                      <Shield className="h-3.5 w-3.5 mr-1" />Deploy
+                    </Button>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </div>

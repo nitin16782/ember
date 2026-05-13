@@ -47,19 +47,34 @@ export default function Hiring() {
   const [reqForm, setReqForm] = useState({ roleCode: "housekeeping" as const, headcount: 1, priority: "medium" as const });
   const [candForm, setCandForm] = useState({ fullName: "", phone: "", source: "direct" as const });
 
+  const openReqs = requisitions?.filter(r => r.status === "open").length || 0;
+  const totalCands = candidates?.length || 0;
+  const interviewStage = candidates?.filter((c: any) => c.status === "interview").length || 0;
+  const offeredCount = candidates?.filter((c: any) => c.status === "offered" || c.status === "joined").length || 0;
+
+  const pipelineStages = ["new", "screening", "interview", "offered", "joined", "rejected"];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-xl font-semibold text-navy">Hiring & ATS</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Requisitions and candidate pipeline</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Requisitions, candidate pipeline, and hiring analytics</p>
         </div>
       </div>
 
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Open Reqs</p><p className="text-2xl font-semibold text-navy mt-1">{openReqs}</p></CardContent></Card>
+        <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Candidates</p><p className="text-2xl font-semibold text-navy mt-1">{totalCands}</p></CardContent></Card>
+        <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">In Interview</p><p className="text-2xl font-semibold text-yellow-600 mt-1">{interviewStage}</p></CardContent></Card>
+        <Card className="border-border/50"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Offered/Joined</p><p className="text-2xl font-semibold text-green-600 mt-1">{offeredCount}</p></CardContent></Card>
+      </div>
+
       <Tabs defaultValue="requisitions" className="space-y-4">
-        <TabsList className="bg-muted/50">
-          <TabsTrigger value="requisitions">Requisitions</TabsTrigger>
-          <TabsTrigger value="candidates">Candidates</TabsTrigger>
+        <TabsList className="bg-cream border border-border/50">
+          <TabsTrigger value="requisitions"><Briefcase className="h-4 w-4 mr-1.5" />Requisitions</TabsTrigger>
+          <TabsTrigger value="candidates"><Users className="h-4 w-4 mr-1.5" />Candidates</TabsTrigger>
+          <TabsTrigger value="pipeline"><ChevronRight className="h-4 w-4 mr-1.5" />Pipeline</TabsTrigger>
         </TabsList>
 
         <TabsContent value="requisitions" className="space-y-4">
@@ -180,6 +195,33 @@ export default function Hiring() {
             {!candLoading && (!candidates || candidates.length === 0) && (
               <Card className="border-border/50 border-dashed"><CardContent className="p-12 text-center"><p className="text-sm text-muted-foreground">No candidates yet</p></CardContent></Card>
             )}
+          </div>
+        </TabsContent>
+        <TabsContent value="pipeline">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {pipelineStages.map(stage => {
+              const stageCands = candidates?.filter((c: any) => c.status === stage) || [];
+              return (
+                <Card key={stage} className="border-border/50">
+                  <CardHeader className="pb-2 pt-3 px-3">
+                    <CardTitle className="text-xs font-medium uppercase tracking-wide flex items-center gap-1.5">
+                      <Badge className={`${candidateStatusColors[stage] || ''} text-[10px]`}>{stageCands.length}</Badge>
+                      {stage.replace('_', ' ')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-3 pb-3 space-y-1.5">
+                    {stageCands.length > 0 ? stageCands.map((c: any) => (
+                      <div key={c.id} className="p-2 rounded bg-cream/50 border border-border/30">
+                        <p className="text-xs font-medium truncate">{c.fullName}</p>
+                        <p className="text-[10px] text-muted-foreground">{c.source?.replace('_', ' ')}</p>
+                      </div>
+                    )) : (
+                      <p className="text-[10px] text-muted-foreground text-center py-4">Empty</p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </TabsContent>
       </Tabs>
