@@ -929,6 +929,63 @@ const recentEvents = protectedProcedure
     };
   });
 
+const pendingEditRequests = rolesProcedure(...SUPERVISOR_ROLES)
+  .input(z.object({ propertyId: isoUuid.optional() }).optional())
+  .query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [] as PendingEditRow[];
+
+    const propertyId = input?.propertyId;
+
+    const rows = await db
+      .select({
+        request: attendanceEditRequests,
+        event: shiftEvents,
+        person: people,
+      })
+      .from(attendanceEditRequests)
+      .innerJoin(shiftEvents, eq(attendanceEditRequests.eventId, shiftEvents.id))
+      .innerJoin(people, eq(shiftEvents.personId, people.id))
+      .where(
+        propertyId
+          ? and(
+              eq(attendanceEditRequests.status, "pending"),
+              eq(shiftEvents.propertyId, propertyId)
+            )
+          : eq(attendanceEditRequests.status, "pending")
+      )
+      .orderBy(desc(attendanceEditRequests.createdAt))
+      .limit(200);
+
+    const result: PendingEditRow[] = rows.map((r) => ({
+      id: r.request.id,
+      eventId: r.event.id,
+      personId: r.person.id,
+      personName: r.person.fullName,
+      propertyId: r.event.propertyId,
+      originalEventAt: r.event.occurredAt.toISOString(),
+      originalEventType: r.event.eventType,
+      newEventAt: r.request.newEventAt.toISOString(),
+      reason: r.request.reason,
+      requestedAt: r.request.createdAt.toISOString(),
+    }));
+
+    return result;
+  });
+
+type PendingEditRow = {
+  id: string;
+  eventId: string;
+  personId: string;
+  personName: string;
+  propertyId: string | null;
+  originalEventAt: string;
+  originalEventType: "check_in" | "check_out" | "break_start" | "break_end";
+  newEventAt: string;
+  reason: string;
+  requestedAt: string;
+};
+
 const legacyList = protectedProcedure
   .input(
     z
@@ -963,6 +1020,7 @@ export const attendanceRouter = router({
   myStatus,
   requestEdit,
   approveEdit,
+  pendingEditRequests,
   recentEvents,
   list: legacyList,
 });

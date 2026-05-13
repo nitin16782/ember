@@ -277,3 +277,35 @@ describe("attendance router — backwards-compat list", () => {
     expect(r).toHaveLength(0);
   });
 });
+
+describe("attendance.pendingEditRequests", () => {
+  it("rejects associate role", async () => {
+    const caller = appRouter.createCaller(mockContext("associate"));
+    await expect(caller.attendance.pendingEditRequests({})).rejects.toThrowError(/FORBIDDEN/);
+  });
+
+  it("rejects owner_portal role", async () => {
+    const caller = appRouter.createCaller(mockContext("owner_portal"));
+    await expect(caller.attendance.pendingEditRequests({})).rejects.toThrowError(/FORBIDDEN/);
+  });
+
+  it("accepts supervisor and returns array (empty when no DB)", async () => {
+    const caller = appRouter.createCaller(mockContext("supervisor"));
+    const r = await caller.attendance.pendingEditRequests({});
+    expect(Array.isArray(r)).toBe(true);
+    expect(r).toHaveLength(0);
+  });
+
+  it("accepts ops_lead and supports a property filter", async () => {
+    const caller = appRouter.createCaller(mockContext("ops_lead"));
+    const r = await caller.attendance.pendingEditRequests({ propertyId: uuid() });
+    expect(Array.isArray(r)).toBe(true);
+  });
+
+  it("rejects invalid propertyId", async () => {
+    const caller = appRouter.createCaller(mockContext("supervisor"));
+    await expect(
+      caller.attendance.pendingEditRequests({ propertyId: "not-a-uuid" as any })
+    ).rejects.toThrow();
+  });
+});
