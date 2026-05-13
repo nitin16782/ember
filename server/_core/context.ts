@@ -1,5 +1,8 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import type { User } from "../../drizzle/schema";
+import { eq } from "drizzle-orm";
+import { verifyAccessToken } from "../services/auth";
+import { getDb } from "../db";
+import { users, type User } from "../../drizzle/schema";
 
 export interface Context {
   user: User | null;
@@ -11,6 +14,21 @@ export interface Context {
 export type TrpcContext = Context;
 
 export async function createContext({ req, res }: CreateExpressContextOptions): Promise<Context> {
-  // Auth resolution happens here in Prompt 3. For now, user is always null.
-  return { user: null, req, res };
+  let user: User | null = null;
+
+  const header = req.headers.authorization;
+  if (header?.startsWith("Bearer ")) {
+    const token = header.slice(7);
+    const claims = await verifyAccessToken(token);
+    if (claims?.sub) {
+      const db = await getDb();
+      if (db) {
+        const [u] = await db.select().from(users)
+          .where(eq(users.id, claims.sub)).limit(1);
+        if (u?.isActive) user = u;
+      }
+    }
+  }
+
+  return { user, req, res };
 }

@@ -5,6 +5,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ENV, validateEnv } from "./env";
+import { authRateLimiter, otpRequestLimiter } from "./rateLimit";
 import { serveStatic, setupVite } from "./vite";
 
 async function startServer() {
@@ -25,6 +26,12 @@ async function startServer() {
       ts: new Date().toISOString(),
     });
   });
+
+  // Rate-limit auth endpoints before they hit the tRPC handler.
+  app.use("/api/trpc/auth.login", authRateLimiter);
+  app.use("/api/trpc/auth.refresh", authRateLimiter);
+  app.use("/api/trpc/auth.requestOtp", otpRequestLimiter);
+  app.use("/api/trpc/auth.requestMagicLink", otpRequestLimiter);
 
   // tRPC API
   app.use(

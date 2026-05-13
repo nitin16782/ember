@@ -39,20 +39,21 @@ function unauthContext(): Context {
 }
 
 describe("auth.me", () => {
-  it("returns the authenticated user", async () => {
+  it("returns the sanitized user for an authenticated request", async () => {
     const ctx = mockContext("admin");
     const caller = appRouter.createCaller(ctx);
     const result = await caller.auth.me();
     expect(result).toBeDefined();
-    expect(result?.name).toBe("Test User");
-    expect(result?.role).toBe("admin");
+    expect(result.name).toBe("Test User");
+    expect(result.role).toBe("admin");
+    // sanitizeUser must not leak fields like createdAt or updatedAt
+    expect(result).not.toHaveProperty("createdAt");
   });
 
-  it("returns null for unauthenticated requests", async () => {
+  it("rejects unauthenticated requests with UNAUTHORIZED", async () => {
     const ctx = unauthContext();
     const caller = appRouter.createCaller(ctx);
-    const result = await caller.auth.me();
-    expect(result).toBeNull();
+    await expect(caller.auth.me()).rejects.toThrow();
   });
 });
 

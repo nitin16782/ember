@@ -1,5 +1,6 @@
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
+import { authRouter } from "./routers/auth";
 import { z } from "zod";
 import * as db from "./db";
 import { mergeTemplate, wrapContractHtml, buildMergeValues, storeContractDocument } from "./services/contractMerge";
@@ -11,13 +12,7 @@ const idOpt = id.optional();
 
 export const appRouter = router({
   system: systemRouter,
-  auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
-    logout: publicProcedure.mutation(() => {
-      // Real cookie clearing is wired in Prompt 3 alongside JWT auth.
-      return { success: true } as const;
-    }),
-  }),
+  auth: authRouter,
 
   // ─── Dashboard ──────────────────────────────────────────────────
   dashboard: router({
