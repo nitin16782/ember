@@ -166,6 +166,8 @@ export const people = mysqlTable("people", {
   salaryStructure: json("salaryStructure"),
   dailyRate: decimal("dailyRate", { precision: 10, scale: 2 }),
   documents: json("documents"),
+  phoneVerifiedAt: timestamp("phoneVerifiedAt"),
+  lastSeenAt: timestamp("lastSeenAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => [
@@ -299,13 +301,20 @@ export const shiftEvents = mysqlTable("shift_events", {
   withinGeofence: boolean("withinGeofence"),
   geofenceDistanceM: int("geofenceDistanceM"),
   selfieUrl: varchar("selfieUrl", { length: 512 }),
+  selfieKey: varchar("selfieKey", { length: 512 }),
   deviceId: varchar("deviceId", { length: 128 }),
   shiftSessionId: varchar("shiftSessionId", { length: 36 }),
+  edited: boolean("edited").default(false).notNull(),
+  editedAt: timestamp("editedAt"),
+  editedBy: fk("editedBy").references(() => users.id),
+  editReason: varchar("editReason", { length: 500 }),
+  notes: varchar("notes", { length: 500 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_shift_person_date").on(table.personId, table.occurredAt),
   index("idx_shift_property_date").on(table.propertyId, table.occurredAt),
   index("idx_shift_session").on(table.shiftSessionId),
+  index("idx_shift_event_type_date").on(table.eventType, table.occurredAt),
 ]);
 
 export const shiftEventEdits = mysqlTable("shift_event_edits", {
@@ -372,8 +381,52 @@ export const leaveApplications = mysqlTable("leave_applications", {
   reviewedBy: fk("reviewedBy"),
   reviewedAt: timestamp("reviewedAt"),
   reviewNote: text("reviewNote"),
+  attendanceSyncedAt: timestamp("attendanceSyncedAt"),
+  coversDailySummaryIds: json("coversDailySummaryIds"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("idx_leave_app_person_dates_status").on(table.personId, table.fromDate, table.toDate, table.status),
+]);
+
+// ─── Module 5b: Daily Summaries (derived per person per day) ────────
+export const dailySummaries = mysqlTable("daily_summaries", {
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  propertyId: fk("propertyId"),
+  date: varchar("date", { length: 10 }).notNull(),
+  status: mysqlEnum("dailySummaryStatus", [
+    "present",
+    "partial",
+    "absent",
+    "leave",
+    "holiday",
+    "weekly_off",
+    "absconding",
+  ]).default("absent").notNull(),
+  totalMinutes: int("totalMinutes").default(0).notNull(),
+  breakMinutes: int("breakMinutes").default(0).notNull(),
+  netWorkMinutes: int("netWorkMinutes").default(0).notNull(),
+  shiftCount: int("shiftCount").default(0).notNull(),
+  breakCount: int("breakCount").default(0).notNull(),
+  firstCheckInAt: timestamp("firstCheckInAt"),
+  lastCheckOutAt: timestamp("lastCheckOutAt"),
+  hasGeofenceViolation: boolean("hasGeofenceViolation").default(false).notNull(),
+  geofenceViolationCount: int("geofenceViolationCount").default(0).notNull(),
+  hasAnomalies: boolean("hasAnomalies").default(false).notNull(),
+  anomalyCodes: json("anomalyCodes"),
+  leaveApplicationId: fk("leaveApplicationId").references(() => leaveApplications.id),
+  computedAt: timestamp("computedAt").defaultNow().notNull(),
+  locked: boolean("locked").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("daily_summaries_person_date_unique").on(table.personId, table.date),
+  index("daily_summaries_property_date_idx").on(table.propertyId, table.date),
+  index("daily_summaries_date_status_idx").on(table.date, table.status),
+]);
+
+export type DailySummary = typeof dailySummaries.$inferSelect;
+export type InsertDailySummary = typeof dailySummaries.$inferInsert;
 
 // ─── Module 7: Payroll ──────────────────────────────────────────────
 export const payrollRuns = mysqlTable("payroll_runs", {
@@ -564,6 +617,8 @@ export const properties = mysqlTable("properties", {
   gpsLng: decimal("gpsLng", { precision: 11, scale: 7 }),
   geofenceRadiusM: int("geofenceRadiusM").default(100),
   geofenceLenient: boolean("geofenceLenient").default(false).notNull(),
+  weeklyOffDays: json("weeklyOffDays"),
+  minimumDailyWorkMinutes: int("minimumDailyWorkMinutes").default(360).notNull(),
   bedroomCount: int("bedroomCount"),
   bathroomCount: int("bathroomCount"),
   sqFt: int("sqFt"),
