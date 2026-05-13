@@ -157,6 +157,8 @@ export const authRouter = router({
       if (identifierType === "phone") {
         const result = await sendOtpSms({ to: identifier, code });
         if (!result.ok) {
+          // Log but don't fail the request — we don't leak whether
+          // a number is valid. User retries if no code arrives.
           console.error("[auth] OTP SMS delivery failed:", result.error);
         }
       } else {
