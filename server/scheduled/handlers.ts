@@ -169,7 +169,7 @@ export async function abscondingDetectionHandler(req: Request, res: Response) {
       .from(people)
       .where(eq(people.employmentStatus, "active"));
 
-    const flagged: Array<{ personId: number; name: string; lastCheckIn: string | null }> = [];
+    const flagged: Array<{ personId: string; name: string; lastCheckIn: string | null }> = [];
 
     for (const person of activePeople) {
       const recentEvents = await db

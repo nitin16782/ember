@@ -49,7 +49,7 @@ export default function Bookings() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  const [form, setForm] = useState({ propertyId: 0, guestName: "", guestPhone: "", dateIn: "", dateOut: "", guestCount: 1, source: "direct" as const });
+  const [form, setForm] = useState({ propertyId: "", guestName: "", guestPhone: "", dateIn: "", dateOut: "", guestCount: 1, source: "direct" as const });
   const totalBookings = bookingList?.length || 0;
   const confirmed = bookingList?.filter((b: any) => b.status === "confirmed").length || 0;
 
@@ -65,7 +65,7 @@ export default function Bookings() {
           <DialogContent>
             <DialogHeader><DialogTitle className="font-display text-navy">Create Booking</DialogTitle></DialogHeader>
             <div className="space-y-4 pt-2">
-              <div className="space-y-2"><Label>Property ID *</Label><Input type="number" value={form.propertyId || ""} onChange={(e) => setForm({ ...form, propertyId: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label>Property ID *</Label><Input value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2"><Label>Guest Name *</Label><Input value={form.guestName} onChange={(e) => setForm({ ...form, guestName: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Phone</Label><Input value={form.guestPhone} onChange={(e) => setForm({ ...form, guestPhone: e.target.value })} /></div>

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import {
   int,
   mysqlEnum,
@@ -13,32 +14,123 @@ import {
   uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
+const uuidPk = () =>
+  varchar("id", { length: 36 }).primaryKey().$defaultFn(() => randomUUID());
+
+const fk = (name: string) => varchar(name, { length: 36 });
+
 // ─── Users (Auth) ───────────────────────────────────────────────────
 export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
+  id: uuidPk(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  phone: varchar("phone", { length: 20 }).unique(),
+  name: varchar("name", { length: 255 }),
   role: mysqlEnum("role", [
     "super_admin", "central_admin", "ops_lead", "supply_lead",
     "finance_admin", "property_manager", "supervisor", "associate",
-    "owner_portal", "user", "admin"
-  ]).default("user").notNull(),
-  phone: varchar("phone", { length: 20 }),
+    "owner_portal"
+  ]).default("associate").notNull(),
   permissionOverrides: json("permissionOverrides"),
+  isActive: boolean("isActive").default(true).notNull(),
+  lastSignedInAt: timestamp("lastSignedInAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-});
+}, (table) => [
+  index("idx_users_email").on(table.email),
+  index("idx_users_phone").on(table.phone),
+  index("idx_users_role").on(table.role),
+]);
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// ─── Auth — credentials, OTP, refresh tokens, magic links ──────────
+
+export const authCredentials = mysqlTable("auth_credentials", {
+  id: uuidPk(),
+  userId: fk("userId").references(() => users.id).notNull().unique(),
+  passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
+  passwordSetAt: timestamp("passwordSetAt").defaultNow().notNull(),
+  mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
+  failedAttempts: int("failedAttempts").default(0).notNull(),
+  lockedUntil: timestamp("lockedUntil"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const otpCodes = mysqlTable("otp_codes", {
+  id: uuidPk(),
+  identifier: varchar("identifier", { length: 320 }).notNull(),
+  identifierType: mysqlEnum("identifierType", ["phone", "email"]).notNull(),
+  codeHash: varchar("codeHash", { length: 255 }).notNull(),
+  purpose: mysqlEnum("purpose", ["login", "password_reset", "phone_verify", "email_verify"]).notNull(),
+  attempts: int("attempts").default(0).notNull(),
+  consumedAt: timestamp("consumedAt"),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_otp_identifier_purpose").on(table.identifier, table.purpose),
+  index("idx_otp_expires").on(table.expiresAt),
+]);
+
+export const refreshTokens = mysqlTable("refresh_tokens", {
+  id: uuidPk(),
+  userId: fk("userId").references(() => users.id).notNull(),
+  tokenHash: varchar("tokenHash", { length: 255 }).notNull().unique(),
+  userAgent: varchar("userAgent", { length: 512 }),
+  ip: varchar("ip", { length: 45 }),
+  expiresAt: timestamp("expiresAt").notNull(),
+  revokedAt: timestamp("revokedAt"),
+  rotatedToId: fk("rotatedToId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  lastUsedAt: timestamp("lastUsedAt"),
+}, (table) => [
+  index("idx_refresh_user").on(table.userId),
+  index("idx_refresh_expires").on(table.expiresAt),
+]);
+
+export const magicLinks = mysqlTable("magic_links", {
+  id: uuidPk(),
+  userId: fk("userId").references(() => users.id).notNull(),
+  tokenHash: varchar("tokenHash", { length: 255 }).notNull().unique(),
+  purpose: mysqlEnum("purpose", ["login", "first_login_setup"]).default("login").notNull(),
+  consumedAt: timestamp("consumedAt"),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_magic_user").on(table.userId),
+  index("idx_magic_expires").on(table.expiresAt),
+]);
+
+export type AuthCredential = typeof authCredentials.$inferSelect;
+export type OtpCode = typeof otpCodes.$inferSelect;
+export type RefreshToken = typeof refreshTokens.$inferSelect;
+export type MagicLink = typeof magicLinks.$inferSelect;
+
+// ─── Entities (Firebrick legal billing entities, separate GST) ──────
+export const entities = mysqlTable("entities", {
+  id: uuidPk(),
+  legalName: varchar("legalName", { length: 255 }).notNull(),
+  gstin: varchar("gstin", { length: 15 }).notNull().unique(),
+  pan: varchar("pan", { length: 10 }),
+  registeredAddress: text("registeredAddress"),
+  state: varchar("state", { length: 64 }),
+  stateCode: varchar("stateCode", { length: 2 }),
+  bankAccountNumber: varchar("bankAccountNumber", { length: 30 }),
+  bankIfsc: varchar("bankIfsc", { length: 11 }),
+  bankName: varchar("bankName", { length: 150 }),
+  invoicePrefix: varchar("invoicePrefix", { length: 16 }),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Entity = typeof entities.$inferSelect;
+
 // ─── Module 1: Associates & Staff Master ────────────────────────────
 export const people = mysqlTable("people", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").references(() => users.id),
+  id: uuidPk(),
+  userId: fk("userId").references(() => users.id),
   fullName: varchar("fullName", { length: 255 }).notNull(),
   photoUrl: varchar("photoUrl", { length: 512 }),
   dob: date("dob"),
@@ -56,13 +148,17 @@ export const people = mysqlTable("people", {
   bankIfsc: varchar("bankIfsc", { length: 11 }),
   bankName: varchar("bankName", { length: 150 }),
   staffType: mysqlEnum("staffType", ["associate", "full_time", "trainee", "stipend"]).notNull(),
+  employmentType: mysqlEnum("employmentType", [
+    "contract", "permanent", "probation", "trainee"
+  ]),
   employmentStatus: mysqlEnum("employmentStatus", ["active", "on_leave", "exited", "absconding"]).default("active").notNull(),
+  abscondingFlaggedAt: timestamp("abscondingFlaggedAt"),
   designation: varchar("designation", { length: 150 }),
   joiningDate: date("joiningDate"),
-  homePropertyId: int("homePropertyId"),
-  currentSupervisorId: int("currentSupervisorId"),
+  homePropertyId: fk("homePropertyId"),
+  currentSupervisorId: fk("currentSupervisorId"),
   source: mysqlEnum("source", ["referral", "direct", "agency", "walk_in", "social_media"]),
-  referrerId: int("referrerId"),
+  referrerId: fk("referrerId"),
   agencyName: varchar("agencyName", { length: 255 }),
   deployable: boolean("deployable").default(false),
   documentsVerified: boolean("documentsVerified").default(false),
@@ -75,6 +171,7 @@ export const people = mysqlTable("people", {
 }, (table) => [
   index("idx_people_status").on(table.employmentStatus),
   index("idx_people_type").on(table.staffType),
+  index("idx_people_emp_type").on(table.employmentType),
   index("idx_people_property").on(table.homePropertyId),
 ]);
 
@@ -83,19 +180,19 @@ export type InsertPerson = typeof people.$inferInsert;
 
 // ─── Module 2: Hiring & ATS ────────────────────────────────────────
 export const requisitions = mysqlTable("requisitions", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId"),
+  id: uuidPk(),
+  propertyId: fk("propertyId"),
   roleCode: mysqlEnum("roleCode", [
     "housekeeping", "kitchen", "f_and_b", "maintenance",
     "security", "supervisor", "manager", "other"
   ]).notNull(),
   headcount: int("headcount").default(1).notNull(),
   priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium").notNull(),
-  raisedBy: int("raisedBy"),
+  raisedBy: fk("raisedBy"),
   targetCloseDate: date("targetCloseDate"),
   interviewOwnerRole: varchar("interviewOwnerRole", { length: 50 }),
   status: mysqlEnum("status", ["open", "in_progress", "filled", "cancelled"]).default("open").notNull(),
-  filledByPersonId: int("filledByPersonId"),
+  filledByPersonId: fk("filledByPersonId"),
   filledAt: timestamp("filledAt"),
   fillNotes: text("fillNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -103,14 +200,13 @@ export const requisitions = mysqlTable("requisitions", {
 });
 
 export const candidates = mysqlTable("candidates", {
-  id: int("id").autoincrement().primaryKey(),
-  requisitionId: int("requisitionId").references(() => requisitions.id),
+  id: uuidPk(),
   fullName: varchar("fullName", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 20 }),
   email: varchar("email", { length: 320 }),
   resumeUrl: varchar("resumeUrl", { length: 512 }),
   source: mysqlEnum("source", ["referral", "direct", "agency", "walk_in", "social_media"]),
-  referralId: int("referralId"),
+  referralId: fk("referralId"),
   agencyName: varchar("agencyName", { length: 255 }),
   expectedSalary: decimal("expectedSalary", { precision: 12, scale: 2 }),
   availabilityDate: date("availabilityDate"),
@@ -123,10 +219,29 @@ export const candidates = mysqlTable("candidates", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const requisitionCandidates = mysqlTable("requisition_candidates", {
+  id: uuidPk(),
+  requisitionId: fk("requisitionId").references(() => requisitions.id).notNull(),
+  candidateId: fk("candidateId").references(() => candidates.id).notNull(),
+  stage: mysqlEnum("stage", [
+    "new", "screening", "interview", "offer_extended",
+    "offer_accepted", "offer_declined", "rejected", "dropped", "hired"
+  ]).default("new").notNull(),
+  stageChangedAt: timestamp("stageChangedAt").defaultNow().notNull(),
+  stageChangedBy: fk("stageChangedBy"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_req_candidate").on(table.requisitionId, table.candidateId),
+  index("idx_rc_stage").on(table.stage),
+]);
+
+export type RequisitionCandidate = typeof requisitionCandidates.$inferSelect;
+
 // ─── Module 3: Onboarding ───────────────────────────────────────────
 export const onboardingChecklists = mysqlTable("onboarding_checklists", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
   items: json("items"),
   status: mysqlEnum("status", ["in_progress", "complete", "blocked"]).default("in_progress").notNull(),
   blockerReason: text("blockerReason"),
@@ -136,7 +251,7 @@ export const onboardingChecklists = mysqlTable("onboarding_checklists", {
 
 // ─── Module 4: Contracts & Documents ────────────────────────────────
 export const contractTemplates = mysqlTable("contract_templates", {
-  id: int("id").autoincrement().primaryKey(),
+  id: uuidPk(),
   code: varchar("code", { length: 50 }).notNull(),
   label: varchar("label", { length: 255 }).notNull(),
   version: int("version").default(1).notNull(),
@@ -149,9 +264,9 @@ export const contractTemplates = mysqlTable("contract_templates", {
 });
 
 export const contracts = mysqlTable("contracts", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
-  templateId: int("templateId").references(() => contractTemplates.id),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  templateId: fk("templateId").references(() => contractTemplates.id),
   templateCode: varchar("templateCode", { length: 50 }),
   mergeValues: json("mergeValues"),
   generatedPdfUrl: varchar("generatedPdfUrl", { length: 512 }),
@@ -163,7 +278,7 @@ export const contracts = mysqlTable("contracts", {
   signedAt: timestamp("signedAt"),
   effectiveFrom: date("effectiveFrom"),
   effectiveTo: date("effectiveTo"),
-  supersedesId: int("supersedesId"),
+  supersedesId: fk("supersedesId"),
   signatureProvider: varchar("signatureProvider", { length: 50 }),
   signatureRequestId: varchar("signatureRequestId", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -172,13 +287,13 @@ export const contracts = mysqlTable("contracts", {
 
 // ─── Module 5: Attendance ───────────────────────────────────────────
 export const shiftEvents = mysqlTable("shift_events", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
-  propertyId: int("propertyId"),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  propertyId: fk("propertyId"),
   eventType: mysqlEnum("eventType", ["check_in", "break_start", "break_end", "check_out"]).notNull(),
   occurredAt: timestamp("occurredAt").notNull(),
   markMode: mysqlEnum("markMode", ["verified_self", "supervisor_marked", "imported", "retro_edit"]).notNull(),
-  markedBy: int("markedBy").notNull(),
+  markedBy: fk("markedBy").notNull(),
   gpsLat: decimal("gpsLat", { precision: 10, scale: 7 }),
   gpsLng: decimal("gpsLng", { precision: 11, scale: 7 }),
   withinGeofence: boolean("withinGeofence"),
@@ -194,27 +309,28 @@ export const shiftEvents = mysqlTable("shift_events", {
 ]);
 
 export const shiftEventEdits = mysqlTable("shift_event_edits", {
-  id: int("id").autoincrement().primaryKey(),
-  shiftEventId: int("shiftEventId").references(() => shiftEvents.id).notNull(),
-  editedBy: int("editedBy").notNull(),
+  id: uuidPk(),
+  shiftEventId: fk("shiftEventId").references(() => shiftEvents.id).notNull(),
+  editedBy: fk("editedBy").notNull(),
   editedAt: timestamp("editedAt").defaultNow().notNull(),
   beforeValue: json("beforeValue"),
   afterValue: json("afterValue"),
   reasonCode: varchar("reasonCode", { length: 32 }).notNull(),
   reasonNote: text("reasonNote"),
-  approvedBy: int("approvedBy"),
+  approvedBy: fk("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   approvalStatus: mysqlEnum("approvalStatus", ["not_required", "pending", "approved", "rejected"]).default("not_required").notNull(),
 });
 
 // ─── Module 6: Leave Management ─────────────────────────────────────
 export const leavePolicies = mysqlTable("leave_policies", {
-  id: int("id").autoincrement().primaryKey(),
+  id: uuidPk(),
   name: varchar("name", { length: 255 }).notNull(),
   appliesToStaffType: varchar("appliesToStaffType", { length: 50 }),
-  appliesToRoleId: int("appliesToRoleId"),
+  appliesToRoleId: fk("appliesToRoleId"),
   leaveType: mysqlEnum("leaveType", [
-    "casual", "sick", "earned", "unpaid", "comp_off", "maternity", "paternity"
+    "casual", "sick", "earned", "unpaid", "comp_off",
+    "maternity", "paternity", "bereavement"
   ]).notNull(),
   accrualRate: decimal("accrualRate", { precision: 5, scale: 2 }),
   maxBalance: decimal("maxBalance", { precision: 5, scale: 1 }),
@@ -229,9 +345,9 @@ export const leavePolicies = mysqlTable("leave_policies", {
 });
 
 export const leaveBalances = mysqlTable("leave_balances", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
-  policyId: int("policyId").references(() => leavePolicies.id).notNull(),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  policyId: fk("policyId").references(() => leavePolicies.id).notNull(),
   balance: decimal("balance", { precision: 5, scale: 1 }).default("0").notNull(),
   earnedToDate: decimal("earnedToDate", { precision: 5, scale: 1 }).default("0").notNull(),
   usedToDate: decimal("usedToDate", { precision: 5, scale: 1 }).default("0").notNull(),
@@ -241,9 +357,9 @@ export const leaveBalances = mysqlTable("leave_balances", {
 });
 
 export const leaveApplications = mysqlTable("leave_applications", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
-  policyId: int("policyId").references(() => leavePolicies.id).notNull(),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  policyId: fk("policyId").references(() => leavePolicies.id).notNull(),
   leaveType: varchar("leaveType", { length: 50 }).notNull(),
   fromDate: date("fromDate").notNull(),
   toDate: date("toDate").notNull(),
@@ -253,7 +369,7 @@ export const leaveApplications = mysqlTable("leave_applications", {
   reason: text("reason"),
   status: mysqlEnum("status", ["pending", "approved", "rejected", "cancelled"]).default("pending").notNull(),
   appliedAt: timestamp("appliedAt").defaultNow().notNull(),
-  reviewedBy: int("reviewedBy"),
+  reviewedBy: fk("reviewedBy"),
   reviewedAt: timestamp("reviewedAt"),
   reviewNote: text("reviewNote"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -261,22 +377,23 @@ export const leaveApplications = mysqlTable("leave_applications", {
 
 // ─── Module 7: Payroll ──────────────────────────────────────────────
 export const payrollRuns = mysqlTable("payroll_runs", {
-  id: int("id").autoincrement().primaryKey(),
+  id: uuidPk(),
+  entityId: fk("entityId").references(() => entities.id),
   cycleMonth: varchar("cycleMonth", { length: 7 }).notNull(),
   entity: varchar("entity", { length: 255 }),
   staffTypes: json("staffTypes"),
   cutoffDate: date("cutoffDate"),
   status: mysqlEnum("status", ["draft", "locked", "finalized", "reverted"]).default("draft").notNull(),
-  initiatedBy: int("initiatedBy"),
+  initiatedBy: fk("initiatedBy"),
   initiatedAt: timestamp("initiatedAt").defaultNow(),
   finalizedAt: timestamp("finalizedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export const payrollLines = mysqlTable("payroll_lines", {
-  id: int("id").autoincrement().primaryKey(),
-  payrollRunId: int("payrollRunId").references(() => payrollRuns.id).notNull(),
-  personId: int("personId").references(() => people.id).notNull(),
+  id: uuidPk(),
+  payrollRunId: fk("payrollRunId").references(() => payrollRuns.id).notNull(),
+  personId: fk("personId").references(() => people.id).notNull(),
   workingDays: decimal("workingDays", { precision: 5, scale: 1 }),
   leaveDays: decimal("leaveDays", { precision: 5, scale: 1 }),
   absentDays: decimal("absentDays", { precision: 5, scale: 1 }),
@@ -293,32 +410,32 @@ export const payrollLines = mysqlTable("payroll_lines", {
 });
 
 export const payrollDeductions = mysqlTable("payroll_deductions", {
-  id: int("id").autoincrement().primaryKey(),
-  payrollLineId: int("payrollLineId").references(() => payrollLines.id).notNull(),
-  personId: int("personId").references(() => people.id).notNull(),
+  id: uuidPk(),
+  payrollLineId: fk("payrollLineId").references(() => payrollLines.id).notNull(),
+  personId: fk("personId").references(() => people.id).notNull(),
   code: mysqlEnum("code", ["ADV", "ABS", "DMG", "DIS", "OPS", "TAX", "STAT", "OTHER"]).notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   reasonNote: text("reasonNote"),
   evidenceUrl: varchar("evidenceUrl", { length: 512 }),
-  requestedBy: int("requestedBy"),
+  requestedBy: fk("requestedBy"),
   requestedAt: timestamp("requestedAt"),
   approvalStatus: mysqlEnum("approvalStatus", ["pending", "approved", "rejected"]).default("pending").notNull(),
-  approvedBy: int("approvedBy"),
+  approvedBy: fk("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export const salaryHolds = mysqlTable("salary_holds", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
-  payrollLineId: int("payrollLineId"),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  payrollLineId: fk("payrollLineId"),
   reason: varchar("reason", { length: 255 }).notNull(),
   reasonNote: text("reasonNote"),
   amount: decimal("amount", { precision: 12, scale: 2 }),
-  appliedBy: int("appliedBy"),
+  appliedBy: fk("appliedBy"),
   appliedAt: timestamp("appliedAt").defaultNow(),
   expiresAt: timestamp("expiresAt"),
-  releasedBy: int("releasedBy"),
+  releasedBy: fk("releasedBy"),
   releasedAt: timestamp("releasedAt"),
   releaseNote: text("releaseNote"),
   status: mysqlEnum("status", ["active", "released", "expired"]).default("active").notNull(),
@@ -327,7 +444,7 @@ export const salaryHolds = mysqlTable("salary_holds", {
 
 // ─── Module 8: Training & L&D ──────────────────────────────────────
 export const trainingModules = mysqlTable("training_modules", {
-  id: int("id").autoincrement().primaryKey(),
+  id: uuidPk(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   roleCodes: json("roleCodes"),
@@ -341,13 +458,13 @@ export const trainingModules = mysqlTable("training_modules", {
 });
 
 export const trainingCompletions = mysqlTable("training_completions", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
-  moduleId: int("moduleId").references(() => trainingModules.id).notNull(),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  moduleId: fk("moduleId").references(() => trainingModules.id).notNull(),
   assignedAt: timestamp("assignedAt").defaultNow(),
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
-  signedOffBy: int("signedOffBy"),
+  signedOffBy: fk("signedOffBy"),
   score: int("score"),
   status: mysqlEnum("status", ["assigned", "in_progress", "completed", "expired"]).default("assigned").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -355,24 +472,24 @@ export const trainingCompletions = mysqlTable("training_completions", {
 
 // ─── Module 9: Performance & Feedback ───────────────────────────────
 export const feedback = mysqlTable("feedback", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
-  propertyId: int("propertyId"),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  propertyId: fk("propertyId"),
   source: varchar("source", { length: 50 }),
   type: mysqlEnum("type", ["appreciation", "complaint", "observation"]).notNull(),
   severity: mysqlEnum("severity", ["low", "medium", "high", "critical"]),
   description: text("description").notNull(),
   actionTaken: text("actionTaken"),
-  reviewedBy: int("reviewedBy"),
+  reviewedBy: fk("reviewedBy"),
   reviewedAt: timestamp("reviewedAt"),
   status: mysqlEnum("feedbackStatus", ["open", "reviewed", "resolved", "dismissed"]).default("open").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export const performanceReviews = mysqlTable("performance_reviews", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
-  reviewerId: int("reviewerId").notNull(),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  reviewerId: fk("reviewerId").notNull(),
   reviewPeriodStart: date("reviewPeriodStart").notNull(),
   reviewPeriodEnd: date("reviewPeriodEnd").notNull(),
   reviewData: json("reviewData"),
@@ -384,13 +501,13 @@ export const performanceReviews = mysqlTable("performance_reviews", {
 
 // ─── Module 10: Exit Management ─────────────────────────────────────
 export const exits = mysqlTable("exits", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
   exitType: mysqlEnum("exitType", [
     "resignation", "termination", "absconding", "contract_end", "mutual"
   ]).notNull(),
   initiatedAt: timestamp("initiatedAt").defaultNow(),
-  initiatedBy: int("initiatedBy"),
+  initiatedBy: fk("initiatedBy"),
   lastWorkingDay: date("lastWorkingDay"),
   checklist: json("checklist"),
   ffAmount: decimal("ffAmount", { precision: 12, scale: 2 }),
@@ -403,13 +520,13 @@ export const exits = mysqlTable("exits", {
 
 // ─── Module 11: Identity (ID Cards) ────────────────────────────────
 export const idCards = mysqlTable("id_cards", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
   cardNumber: varchar("cardNumber", { length: 32 }).notNull().unique(),
   qrToken: varchar("qrToken", { length: 128 }).notNull().unique(),
   photoUrl: varchar("photoUrl", { length: 512 }),
   designation: varchar("designation", { length: 150 }),
-  propertyId: int("propertyId"),
+  propertyId: fk("propertyId"),
   validFrom: date("validFrom"),
   validUntil: date("validUntil"),
   generatedAt: timestamp("generatedAt").defaultNow(),
@@ -420,9 +537,9 @@ export const idCards = mysqlTable("id_cards", {
 
 // ─── Module 12: Referrals ───────────────────────────────────────────
 export const referrals = mysqlTable("referrals", {
-  id: int("id").autoincrement().primaryKey(),
-  referrerPersonId: int("referrerPersonId").references(() => people.id).notNull(),
-  candidateId: int("candidateId"),
+  id: uuidPk(),
+  referrerPersonId: fk("referrerPersonId").references(() => people.id).notNull(),
+  candidateId: fk("candidateId"),
   candidateName: varchar("candidateName", { length: 255 }).notNull(),
   candidatePhone: varchar("candidatePhone", { length: 20 }).notNull(),
   referredAt: timestamp("referredAt").defaultNow(),
@@ -436,7 +553,7 @@ export const referrals = mysqlTable("referrals", {
 
 // ─── Module 13: Property Master ─────────────────────────────────────
 export const properties = mysqlTable("properties", {
-  id: int("id").autoincrement().primaryKey(),
+  id: uuidPk(),
   name: varchar("name", { length: 255 }).notNull(),
   type: mysqlEnum("propertyType", ["villa", "second_home", "hotel", "apartment"]).notNull(),
   address: text("address"),
@@ -446,17 +563,17 @@ export const properties = mysqlTable("properties", {
   gpsLat: decimal("gpsLat", { precision: 10, scale: 7 }),
   gpsLng: decimal("gpsLng", { precision: 11, scale: 7 }),
   geofenceRadiusM: int("geofenceRadiusM").default(100),
-  geofenceLenient: boolean("geofenceLenient").default(false),
+  geofenceLenient: boolean("geofenceLenient").default(false).notNull(),
   bedroomCount: int("bedroomCount"),
   bathroomCount: int("bathroomCount"),
   sqFt: int("sqFt"),
   amenities: json("amenities"),
   roomMap: json("roomMap"),
   photos: json("photos"),
-  primaryOwnerId: int("primaryOwnerId"),
-  assignedPmId: int("assignedPmId"),
-  feeStructureId: int("feeStructureId"),
-  slaId: int("slaId"),
+  primaryOwnerId: fk("primaryOwnerId"),
+  assignedPmId: fk("assignedPmId"),
+  feeStructureId: fk("feeStructureId"),
+  slaId: fk("slaId"),
   onboardedAt: timestamp("onboardedAt"),
   churnedAt: timestamp("churnedAt"),
   churnReason: text("churnReason"),
@@ -466,8 +583,8 @@ export const properties = mysqlTable("properties", {
 });
 
 export const owners = mysqlTable("owners", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").references(() => users.id),
+  id: uuidPk(),
+  userId: fk("userId").references(() => users.id).unique(),
   name: varchar("name", { length: 255 }).notNull(),
   type: mysqlEnum("ownerType", ["individual", "company", "family_trust"]).default("individual").notNull(),
   primaryContact: varchar("primaryContact", { length: 255 }),
@@ -485,16 +602,16 @@ export const owners = mysqlTable("owners", {
 });
 
 export const propertyOwners = mysqlTable("property_owners", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
-  ownerId: int("ownerId").references(() => owners.id).notNull(),
+  id: uuidPk(),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
+  ownerId: fk("ownerId").references(() => owners.id).notNull(),
   ownershipPct: decimal("ownershipPct", { precision: 5, scale: 2 }),
   isPrimary: boolean("isPrimary").default(false),
   permissions: json("permissions"),
 });
 
 export const feeStructures = mysqlTable("fee_structures", {
-  id: int("id").autoincrement().primaryKey(),
+  id: uuidPk(),
   name: varchar("name", { length: 255 }).notNull(),
   monthlyFee: decimal("monthlyFee", { precision: 12, scale: 2 }),
   expenseMarkupPct: decimal("expenseMarkupPct", { precision: 5, scale: 2 }),
@@ -507,7 +624,7 @@ export const feeStructures = mysqlTable("fee_structures", {
 });
 
 export const slas = mysqlTable("slas", {
-  id: int("id").autoincrement().primaryKey(),
+  id: uuidPk(),
   name: varchar("name", { length: 255 }).notNull(),
   responseTimeHours: int("responseTimeHours"),
   monthlyVisitCount: int("monthlyVisitCount"),
@@ -519,9 +636,9 @@ export const slas = mysqlTable("slas", {
 
 // ─── Module 14: Assignment Roster ───────────────────────────────────
 export const assignments = mysqlTable("assignments", {
-  id: int("id").autoincrement().primaryKey(),
-  personId: int("personId").references(() => people.id).notNull(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
+  id: uuidPk(),
+  personId: fk("personId").references(() => people.id).notNull(),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
   roleCode: varchar("roleCode", { length: 50 }).notNull(),
   shift: mysqlEnum("shift", ["morning", "evening", "full_day", "night", "24x7"]).default("full_day"),
   startDate: date("startDate").notNull(),
@@ -537,10 +654,10 @@ export const assignments = mysqlTable("assignments", {
 
 // ─── Module 15: Daily Operations ────────────────────────────────────
 export const dailyChecklists = mysqlTable("daily_checklists", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
+  id: uuidPk(),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
   checklistDate: date("checklistDate").notNull(),
-  submittedBy: int("submittedBy"),
+  submittedBy: fk("submittedBy"),
   submittedAt: timestamp("submittedAt"),
   sections: json("sections"),
   photos: json("photos"),
@@ -550,11 +667,11 @@ export const dailyChecklists = mysqlTable("daily_checklists", {
 });
 
 export const breakages = mysqlTable("breakages", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
-  inventoryItemId: int("inventoryItemId"),
+  id: uuidPk(),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
+  inventoryItemId: fk("inventoryItemId"),
   description: text("description").notNull(),
-  attributedTo: int("attributedTo"),
+  attributedTo: fk("attributedTo"),
   attributionStatus: mysqlEnum("attributionStatus", [
     "unattributed", "associate", "guest", "accidental", "wear"
   ]).default("unattributed").notNull(),
@@ -569,13 +686,13 @@ export const breakages = mysqlTable("breakages", {
 
 // ─── Module 16: Expense Management ──────────────────────────────────
 export const expenses = mysqlTable("expenses", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId").references(() => properties.id),
+  id: uuidPk(),
+  propertyId: fk("propertyId").references(() => properties.id),
   incurredAt: date("incurredAt").notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   gstAmount: decimal("gstAmount", { precision: 12, scale: 2 }),
   totalAmount: decimal("totalAmount", { precision: 12, scale: 2 }),
-  vendorId: int("vendorId"),
+  vendorId: fk("vendorId"),
   category: mysqlEnum("expenseCategory", [
     "utility", "food", "maintenance", "consumables", "vendor", "staff", "other"
   ]).notNull(),
@@ -588,15 +705,15 @@ export const expenses = mysqlTable("expenses", {
     "omni_card", "omni_upi", "cash_advance", "personal", "bank_transfer"
   ]),
   omniTxnId: varchar("omniTxnId", { length: 100 }),
-  capturedBy: int("capturedBy"),
+  capturedBy: fk("capturedBy"),
   capturedAt: timestamp("capturedAt").defaultNow(),
   approvalStatus: mysqlEnum("expenseApprovalStatus", [
     "pending", "approved", "rejected", "auto_approved"
   ]).default("pending").notNull(),
-  approvedBy: int("approvedBy"),
+  approvedBy: fk("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   rejectionReason: text("rejectionReason"),
-  invoiceId: int("invoiceId"),
+  invoiceId: fk("invoiceId"),
   status: mysqlEnum("expenseStatus", [
     "captured", "approved", "invoiced", "reimbursed", "rejected"
   ]).default("captured").notNull(),
@@ -605,7 +722,7 @@ export const expenses = mysqlTable("expenses", {
 
 // ─── Module 17: Vendor Management ───────────────────────────────────
 export const vendors = mysqlTable("vendors", {
-  id: int("id").autoincrement().primaryKey(),
+  id: uuidPk(),
   name: varchar("name", { length: 255 }).notNull(),
   category: varchar("category", { length: 100 }),
   contactName: varchar("contactName", { length: 255 }),
@@ -623,17 +740,17 @@ export const vendors = mysqlTable("vendors", {
 });
 
 export const workOrders = mysqlTable("work_orders", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
-  vendorId: int("vendorId").references(() => vendors.id).notNull(),
-  raisedBy: int("raisedBy"),
+  id: uuidPk(),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
+  vendorId: fk("vendorId").references(() => vendors.id).notNull(),
+  raisedBy: fk("raisedBy"),
   description: text("description").notNull(),
   quotedAmount: decimal("quotedAmount", { precision: 12, scale: 2 }),
   scheduledFor: date("scheduledFor"),
   completedAt: timestamp("completedAt"),
   finalAmount: decimal("finalAmount", { precision: 12, scale: 2 }),
   rating: int("rating"),
-  expenseId: int("expenseId"),
+  expenseId: fk("expenseId"),
   status: mysqlEnum("workOrderStatus", [
     "raised", "accepted", "in_progress", "completed", "cancelled", "disputed"
   ]).default("raised").notNull(),
@@ -642,8 +759,8 @@ export const workOrders = mysqlTable("work_orders", {
 
 // ─── Module 18: Inventory & Assets ──────────────────────────────────
 export const inventoryItems = mysqlTable("inventory_items", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
+  id: uuidPk(),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   category: varchar("category", { length: 100 }),
   location: varchar("location", { length: 255 }),
@@ -659,8 +776,8 @@ export const inventoryItems = mysqlTable("inventory_items", {
 
 // ─── Module 19: Bookings & Occupancy ────────────────────────────────
 export const bookings = mysqlTable("bookings", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
+  id: uuidPk(),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
   dateIn: date("dateIn").notNull(),
   dateOut: date("dateOut").notNull(),
   guestCount: int("guestCount"),
@@ -674,10 +791,11 @@ export const bookings = mysqlTable("bookings", {
 
 // ─── Module 20: Invoicing & Payments ────────────────────────────────
 export const invoices = mysqlTable("invoices", {
-  id: int("id").autoincrement().primaryKey(),
+  id: uuidPk(),
   invoiceNo: varchar("invoiceNo", { length: 50 }).notNull().unique(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
-  ownerId: int("ownerId").references(() => owners.id).notNull(),
+  entityId: fk("entityId").references(() => entities.id),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
+  ownerId: fk("ownerId").references(() => owners.id).notNull(),
   invoiceDate: date("invoiceDate").notNull(),
   dueDate: date("dueDate").notNull(),
   monthCovered: varchar("monthCovered", { length: 7 }).notNull(),
@@ -692,7 +810,10 @@ export const invoices = mysqlTable("invoices", {
   amountOutstanding: decimal("amountOutstanding", { precision: 12, scale: 2 }),
   lineItems: json("lineItems"),
   gstTreatment: json("gstTreatment"),
-  eInvoiceIrn: varchar("eInvoiceIrn", { length: 255 }),
+  placeOfSupplyStateCode: varchar("placeOfSupplyStateCode", { length: 2 }),
+  eInvoiceIrn: varchar("eInvoiceIrn", { length: 64 }),
+  eInvoiceAckNo: varchar("eInvoiceAckNo", { length: 32 }),
+  eInvoiceQrCode: text("eInvoiceQrCode"),
   pdfUrl: varchar("pdfUrl", { length: 512 }),
   issuedAt: timestamp("issuedAt"),
   status: mysqlEnum("invoiceStatus", [
@@ -703,8 +824,8 @@ export const invoices = mysqlTable("invoices", {
 });
 
 export const payments = mysqlTable("payments", {
-  id: int("id").autoincrement().primaryKey(),
-  invoiceId: int("invoiceId").references(() => invoices.id).notNull(),
+  id: uuidPk(),
+  invoiceId: fk("invoiceId").references(() => invoices.id).notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   paidAt: timestamp("paidAt"),
   method: mysqlEnum("paymentMethod", [
@@ -719,14 +840,14 @@ export const payments = mysqlTable("payments", {
 
 // ─── Module 21: Owner Portal — Requests ─────────────────────────────
 export const requests = mysqlTable("requests", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
-  ownerId: int("ownerId").references(() => owners.id).notNull(),
+  id: uuidPk(),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
+  ownerId: fk("ownerId").references(() => owners.id).notNull(),
   type: varchar("type", { length: 100 }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   priority: mysqlEnum("requestPriority", ["low", "medium", "high", "urgent"]).default("medium").notNull(),
-  assignedTo: int("assignedTo"),
+  assignedTo: fk("assignedTo"),
   resolvedAt: timestamp("resolvedAt"),
   resolution: text("resolution"),
   status: mysqlEnum("requestStatus", ["open", "in_progress", "resolved", "closed"]).default("open").notNull(),
@@ -735,8 +856,8 @@ export const requests = mysqlTable("requests", {
 
 // ─── Monthly Reports ────────────────────────────────────────────────
 export const monthlyReports = mysqlTable("monthly_reports", {
-  id: int("id").autoincrement().primaryKey(),
-  propertyId: int("propertyId").references(() => properties.id).notNull(),
+  id: uuidPk(),
+  propertyId: fk("propertyId").references(() => properties.id).notNull(),
   month: varchar("month", { length: 7 }).notNull(),
   generatedAt: timestamp("generatedAt"),
   dataSnapshot: json("dataSnapshot"),
@@ -748,8 +869,8 @@ export const monthlyReports = mysqlTable("monthly_reports", {
 
 // ─── Cross-cutting: Notifications ───────────────────────────────────
 export const notifications = mysqlTable("notifications", {
-  id: int("id").autoincrement().primaryKey(),
-  recipientId: int("recipientId").notNull(),
+  id: uuidPk(),
+  recipientId: fk("recipientId").notNull(),
   recipientType: mysqlEnum("recipientType", ["staff", "owner"]).notNull(),
   eventType: varchar("eventType", { length: 100 }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
@@ -764,12 +885,12 @@ export const notifications = mysqlTable("notifications", {
 
 // ─── Cross-cutting: Audit Log ───────────────────────────────────────
 export const auditLog = mysqlTable("audit_log", {
-  id: int("id").autoincrement().primaryKey(),
-  actorId: int("actorId"),
+  id: uuidPk(),
+  actorId: fk("actorId").references(() => users.id),
   actorRole: varchar("actorRole", { length: 50 }),
   action: varchar("action", { length: 100 }).notNull(),
   entityType: varchar("entityType", { length: 50 }).notNull(),
-  entityId: int("entityId"),
+  entityId: fk("entityId"),
   beforeValue: json("beforeValue"),
   afterValue: json("afterValue"),
   reasonCode: varchar("reasonCode", { length: 32 }),

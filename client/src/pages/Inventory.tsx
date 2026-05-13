@@ -37,7 +37,7 @@ export default function Inventory() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  const [form, setForm] = useState({ propertyId: 0, name: "", category: "", unit: "pcs", quantity: 1, condition: "good" as const });
+  const [form, setForm] = useState({ propertyId: "", name: "", category: "", unit: "pcs", quantity: 1, condition: "good" as const });
   const totalItems = items?.length || 0;
   const damagedItems = items?.filter((i: any) => i.condition === "damaged" || i.condition === "poor").length || 0;
 
@@ -55,7 +55,7 @@ export default function Inventory() {
             <div className="space-y-4 pt-2">
               <div className="space-y-2"><Label>Item Name *</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2"><Label>Property ID *</Label><Input type="number" value={form.propertyId || ""} onChange={(e) => setForm({ ...form, propertyId: Number(e.target.value) })} /></div>
+                <div className="space-y-2"><Label>Property ID *</Label><Input value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Category</Label><Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="e.g. Cleaning" /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">

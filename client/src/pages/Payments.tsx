@@ -37,7 +37,7 @@ export default function Payments() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  const [form, setForm] = useState({ invoiceId: 0, amount: 0, method: "upi_direct" as "cashfree" | "bank_transfer" | "cheque" | "upi_direct" | "adjustment", bankReference: "" });
+  const [form, setForm] = useState({ invoiceId: "", amount: 0, method: "upi_direct" as "cashfree" | "bank_transfer" | "cheque" | "upi_direct" | "adjustment", bankReference: "" });
 
   const totalCollected = paymentList?.reduce((s: number, p: any) => s + Number(p.amount || 0), 0) || 0;
   const capturedCount = paymentList?.filter((p: any) => p.status === "captured").length || 0;
@@ -55,7 +55,7 @@ export default function Payments() {
           <DialogContent>
             <DialogHeader><DialogTitle className="font-display text-navy">Record Payment</DialogTitle></DialogHeader>
             <div className="space-y-4 pt-2">
-              <div className="space-y-2"><Label>Invoice ID *</Label><Input type="number" value={form.invoiceId || ""} onChange={(e) => setForm({ ...form, invoiceId: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label>Invoice ID *</Label><Input value={form.invoiceId} onChange={(e) => setForm({ ...form, invoiceId: e.target.value })} /></div>
               <div className="space-y-2"><Label>Amount (₹) *</Label><Input type="number" value={form.amount || ""} onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })} /></div>
               <div className="space-y-2"><Label>Method</Label>
                 <Select value={form.method} onValueChange={(v: string) => setForm({ ...form, method: v as typeof form.method })}>

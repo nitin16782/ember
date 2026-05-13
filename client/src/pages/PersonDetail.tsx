@@ -17,7 +17,7 @@ function formatField(val: unknown): string {
 export default function PersonDetail() {
   const params = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
-  const id = Number(params.id);
+  const id = params.id ?? "";
   const { data: person, isLoading } = trpc.people.get.useQuery({ id }, { enabled: !!id });
   const { data: onboardingItems } = trpc.onboarding.list.useQuery({ personId: id }, { enabled: !!id });
   const { data: contracts } = trpc.contracts.list.useQuery({ personId: id }, { enabled: !!id });

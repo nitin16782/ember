@@ -68,7 +68,7 @@ export default function Onboarding() {
               </div>
               <Button
                 onClick={() => createChecklist.mutate({
-                  personId: Number(form.personId),
+                  personId: form.personId,
                   templateName: form.templateName,
                   items: defaultChecklist.map(item => ({ label: item, done: false })),
                 })}

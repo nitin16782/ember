@@ -60,11 +60,11 @@ export default function IdCards() {
               </div>
               <Button
                 onClick={() => createCard.mutate({
-                  personId: Number(form.personId),
+                  personId: form.personId,
                   cardNumber: form.cardNumber,
                   qrToken: `EMB-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                   designation: form.designation || undefined,
-                  propertyId: form.propertyId ? Number(form.propertyId) : undefined,
+                  propertyId: form.propertyId || undefined,
                   validFrom: form.validFrom || undefined,
                   validUntil: form.validUntil || undefined,
                 })}

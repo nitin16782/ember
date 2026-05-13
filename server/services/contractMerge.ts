@@ -123,7 +123,7 @@ export function wrapContractHtml(bodyHtml: string, title: string): string {
  * Store a generated contract HTML as a file and return the storage URL.
  */
 export async function storeContractDocument(
-  contractId: number,
+  contractId: string,
   html: string,
   filename: string
 ): Promise<{ key: string; url: string }> {

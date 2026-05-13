@@ -141,7 +141,7 @@ export default function Exits() {
               </div>
               <div className="space-y-2"><Label>Last Working Day</Label><Input type="date" value={form.lastWorkingDay} onChange={(e) => setForm({ ...form, lastWorkingDay: e.target.value })} /></div>
               <div className="space-y-2"><Label>Reason</Label><Textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="Reason for exit..." rows={3} /></div>
-              <Button onClick={() => createExit.mutate({ personId: Number(form.personId), exitType: form.exitType as any, lastWorkingDay: form.lastWorkingDay || undefined, reason: form.reason || undefined })} disabled={!form.personId || createExit.isPending} className="w-full bg-navy text-white hover:bg-navy/90">{createExit.isPending ? "Processing..." : "Initiate Exit Process"}</Button>
+              <Button onClick={() => createExit.mutate({ personId: form.personId, exitType: form.exitType as any, lastWorkingDay: form.lastWorkingDay || undefined, reason: form.reason || undefined })} disabled={!form.personId || createExit.isPending} className="w-full bg-navy text-white hover:bg-navy/90">{createExit.isPending ? "Processing..." : "Initiate Exit Process"}</Button>
             </div>
           </DialogContent>
         </Dialog>

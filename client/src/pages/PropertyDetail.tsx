@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function PropertyDetail() {
   const params = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
-  const id = Number(params.id);
+  const id = params.id ?? "";
   const { data: property, isLoading } = trpc.properties.get.useQuery({ id }, { enabled: !!id });
 
   if (isLoading) return <div className="space-y-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-40 w-full" /></div>;

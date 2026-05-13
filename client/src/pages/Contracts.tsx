@@ -79,9 +79,9 @@ export default function Contracts() {
               </div>
               <Button
                 onClick={() => createContract.mutate({
-                  personId: Number(form.personId),
+                  personId: form.personId,
                   contractType: form.contractType,
-                  templateId: form.templateId ? Number(form.templateId) : undefined,
+                  templateId: form.templateId || undefined,
                   startDate: form.startDate,
                   endDate: form.endDate || undefined,
                 })}

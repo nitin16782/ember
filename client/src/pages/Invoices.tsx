@@ -50,7 +50,7 @@ export default function Invoices() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  const [form, setForm] = useState({ propertyId: 0, invoiceNo: "", monthCovered: "", totalAmount: 0, gstAmount: 0, dueDate: "" });
+  const [form, setForm] = useState({ propertyId: "", ownerId: "", invoiceNo: "", monthCovered: "", totalAmount: 0, gstAmount: 0, dueDate: "" });
 
   const totalInvoiced = invoiceList?.reduce((s: number, i: any) => s + Number(i.totalAmount || 0), 0) || 0;
   const paidCount = invoiceList?.filter((i: any) => i.status === "paid").length || 0;
@@ -69,9 +69,10 @@ export default function Invoices() {
             <DialogHeader><DialogTitle className="font-display text-navy">Create Invoice</DialogTitle></DialogHeader>
             <div className="space-y-4 pt-2">
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2"><Label>Property ID *</Label><Input type="number" value={form.propertyId || ""} onChange={(e) => setForm({ ...form, propertyId: Number(e.target.value) })} /></div>
-                <div className="space-y-2"><Label>Invoice No *</Label><Input value={form.invoiceNo} onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })} placeholder="INV-2026-001" /></div>
+                <div className="space-y-2"><Label>Property ID *</Label><Input value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Owner ID *</Label><Input value={form.ownerId} onChange={(e) => setForm({ ...form, ownerId: e.target.value })} /></div>
               </div>
+              <div className="space-y-2"><Label>Invoice No *</Label><Input value={form.invoiceNo} onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })} placeholder="INV-2026-001" /></div>
               <div className="space-y-2"><Label>Month Covered *</Label><Input value={form.monthCovered} onChange={(e) => setForm({ ...form, monthCovered: e.target.value })} placeholder="May 2026" /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2"><Label>Base Amount (₹)</Label><Input type="number" value={form.totalAmount || ""} onChange={(e) => { const base = Number(e.target.value); setForm({ ...form, totalAmount: base, gstAmount: Math.round(base * 0.18) }); }} /></div>
@@ -82,7 +83,7 @@ export default function Invoices() {
                 <p className="font-medium">Total: ₹{(form.totalAmount + form.gstAmount).toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground">Base ₹{form.totalAmount.toLocaleString()} + GST ₹{form.gstAmount.toLocaleString()}</p>
               </div>
-              <Button onClick={() => { if (!form.propertyId || !form.invoiceNo || !form.monthCovered || !form.dueDate) { toast.error("Fill all required fields"); return; } createInvoice.mutate({ propertyId: form.propertyId, ownerId: 1, invoiceNo: form.invoiceNo, invoiceDate: new Date().toISOString().split('T')[0], monthCovered: form.monthCovered, totalAmount: String(form.totalAmount + form.gstAmount), dueDate: form.dueDate }); }} className="w-full bg-navy text-white hover:bg-navy/90" disabled={createInvoice.isPending}>
+              <Button onClick={() => { if (!form.propertyId || !form.ownerId || !form.invoiceNo || !form.monthCovered || !form.dueDate) { toast.error("Fill all required fields"); return; } createInvoice.mutate({ propertyId: form.propertyId, ownerId: form.ownerId, invoiceNo: form.invoiceNo, invoiceDate: new Date().toISOString().split('T')[0], monthCovered: form.monthCovered, totalAmount: String(form.totalAmount + form.gstAmount), dueDate: form.dueDate }); }} className="w-full bg-navy text-white hover:bg-navy/90" disabled={createInvoice.isPending}>
                 {createInvoice.isPending ? "Creating..." : "Create Invoice"}
               </Button>
             </div>

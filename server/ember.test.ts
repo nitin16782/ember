@@ -1,21 +1,23 @@
+import { randomUUID } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 import { appRouter } from "./routers";
 import type { Context } from "./_core/context";
 
+const uuid = () => randomUUID();
+
 function mockContext(role: string = "super_admin"): Context {
   return {
     user: {
-      id: 1,
-      role: role as any,
-      name: "Test User",
-      openId: "test",
+      id: uuid(),
       email: "test@example.com",
       phone: null,
-      loginMethod: null,
+      name: "Test User",
+      role: role as any,
       permissionOverrides: null,
+      isActive: true,
+      lastSignedInAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date(),
-      lastSignedIn: new Date(),
     } as any,
     req: {
       protocol: "https",
@@ -93,6 +95,12 @@ describe("people", () => {
     const ctx = unauthContext();
     const caller = appRouter.createCaller(ctx);
     await expect(caller.people.list({})).rejects.toThrow();
+  });
+
+  it("rejects non-UUID IDs", async () => {
+    const ctx = mockContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.people.get({ id: "not-a-uuid" as any })).rejects.toThrow();
   });
 });
 
@@ -207,6 +215,14 @@ describe("hiring", () => {
     const caller = appRouter.createCaller(ctx);
     const result = await caller.hiring.candidates({});
     expect(Array.isArray(result)).toBe(true);
+  });
+
+  it("rejects link with non-UUID requisitionId", async () => {
+    const ctx = mockContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.hiring.linkCandidateToRequisition({ requisitionId: "abc" as any, candidateId: uuid() })
+    ).rejects.toThrow();
   });
 });
 

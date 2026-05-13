@@ -44,7 +44,7 @@ export default function Referrals() {
               <div className="space-y-2"><Label>Candidate Name *</Label><Input value={form.candidateName} onChange={(e) => setForm({ ...form, candidateName: e.target.value })} /></div>
               <div className="space-y-2"><Label>Candidate Phone *</Label><Input value={form.candidatePhone} onChange={(e) => setForm({ ...form, candidatePhone: e.target.value })} placeholder="+91..." /></div>
               <div className="space-y-2"><Label>Notes</Label><Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" /></div>
-              <Button onClick={() => createReferral.mutate({ referrerPersonId: Number(form.referrerPersonId), candidateName: form.candidateName, candidatePhone: form.candidatePhone, notes: form.notes || undefined })} disabled={!form.referrerPersonId || !form.candidateName || !form.candidatePhone || createReferral.isPending} className="w-full bg-navy text-white hover:bg-navy/90">{createReferral.isPending ? "Submitting..." : "Submit Referral"}</Button>
+              <Button onClick={() => createReferral.mutate({ referrerPersonId: form.referrerPersonId, candidateName: form.candidateName, candidatePhone: form.candidatePhone, notes: form.notes || undefined })} disabled={!form.referrerPersonId || !form.candidateName || !form.candidatePhone || createReferral.isPending} className="w-full bg-navy text-white hover:bg-navy/90">{createReferral.isPending ? "Submitting..." : "Submit Referral"}</Button>
             </div>
           </DialogContent>
         </Dialog>
