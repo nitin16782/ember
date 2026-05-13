@@ -1,28 +1,16 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
 
-export type TrpcContext = {
+export interface Context {
+  user: User | null;
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
-  user: User | null;
-};
+}
 
-export async function createContext(
-  opts: CreateExpressContextOptions
-): Promise<TrpcContext> {
-  let user: User | null = null;
+// Tests still import `TrpcContext`; alias retained for compatibility.
+export type TrpcContext = Context;
 
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    // Authentication is optional for public procedures.
-    user = null;
-  }
-
-  return {
-    req: opts.req,
-    res: opts.res,
-    user,
-  };
+export async function createContext({ req, res }: CreateExpressContextOptions): Promise<Context> {
+  // Auth resolution happens here in Prompt 3. For now, user is always null.
+  return { user: null, req, res };
 }

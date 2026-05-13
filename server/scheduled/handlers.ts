@@ -1,10 +1,9 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════
- * Scheduled Job Handlers — Heartbeat Callbacks
- * ═══════════════════════════════════════════════════════════════════════
+ * Scheduled Job Handlers
  *
- * These handlers are called by the Manus heartbeat cron system.
- * Each handler is mounted at /api/scheduled/<name> in server/_core/index.ts.
+ * Wired to node-cron in Prompt 7. Each handler is invoked via HTTP POST
+ * with a shared-secret header (`x-ember-cron-secret`) so they can also
+ * be triggered manually from operations.
  *
  * Jobs:
  *   1. idCardExpiry — daily check for expired ID cards
@@ -13,28 +12,32 @@
  */
 
 import type { Request, Response } from "express";
-import { sdk } from "../_core/sdk";
 import { getDb } from "../db";
 import { idCards, referrals, shiftEvents, people, leaveApplications } from "../../drizzle/schema";
 import { eq, lt, and, sql, isNull } from "drizzle-orm";
+
+function verifyCronCall(req: Request, res: Response): boolean {
+  const header = req.headers["x-ember-cron-secret"];
+  const expected = process.env.CRON_SHARED_SECRET ?? "";
+  if (!expected || header !== expected) {
+    res.status(403).json({ error: "cron-only" });
+    return false;
+  }
+  return true;
+}
 
 /**
  * ID Card Auto-Expiry Handler
  * Runs daily to mark expired ID cards as "expired" based on validUntil date.
  */
 export async function idCardExpiryHandler(req: Request, res: Response) {
+  if (!verifyCronCall(req, res)) return;
   try {
-    const user = await sdk.authenticateRequest(req);
-    if (!user.isCron || !user.taskUid) {
-      return res.status(403).json({ error: "cron-only" });
-    }
-
     const db = await getDb();
     if (!db) {
       return res.status(500).json({ error: "Database unavailable" });
     }
 
-    // Find all active cards where validUntil is in the past
     const today = new Date().toISOString().split("T")[0];
     const expiredCards = await db
       .select({ id: idCards.id, cardNumber: idCards.cardNumber, personId: idCards.personId })
@@ -63,7 +66,7 @@ export async function idCardExpiryHandler(req: Request, res: Response) {
     res.status(500).json({
       error: err.message,
       stack: err.stack,
-      context: { url: req.url, taskUid: (req as any).taskUid },
+      context: { url: req.url },
       timestamp: new Date().toISOString(),
     });
   }
@@ -75,12 +78,8 @@ export async function idCardExpiryHandler(req: Request, res: Response) {
  * Updates tranche payment dates when milestones are reached.
  */
 export async function referralMilestonesHandler(req: Request, res: Response) {
+  if (!verifyCronCall(req, res)) return;
   try {
-    const user = await sdk.authenticateRequest(req);
-    if (!user.isCron || !user.taskUid) {
-      return res.status(403).json({ error: "cron-only" });
-    }
-
     const db = await getDb();
     if (!db) {
       return res.status(500).json({ error: "Database unavailable" });
@@ -90,7 +89,6 @@ export async function referralMilestonesHandler(req: Request, res: Response) {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-    // Find converted referrals where tranche1 hasn't been paid and referral is 30+ days old
     const tranche1Eligible = await db
       .select()
       .from(referrals)
@@ -111,7 +109,6 @@ export async function referralMilestonesHandler(req: Request, res: Response) {
       tranche1Count++;
     }
 
-    // Find converted referrals where tranche2 hasn't been paid and referral is 90+ days old
     const tranche2Eligible = await db
       .select()
       .from(referrals)
@@ -157,12 +154,8 @@ export async function referralMilestonesHandler(req: Request, res: Response) {
  * without an approved leave application.
  */
 export async function abscondingDetectionHandler(req: Request, res: Response) {
+  if (!verifyCronCall(req, res)) return;
   try {
-    const user = await sdk.authenticateRequest(req);
-    if (!user.isCron || !user.taskUid) {
-      return res.status(403).json({ error: "cron-only" });
-    }
-
     const db = await getDb();
     if (!db) {
       return res.status(500).json({ error: "Database unavailable" });
@@ -171,7 +164,6 @@ export async function abscondingDetectionHandler(req: Request, res: Response) {
     const now = new Date();
     const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
-    // Get all active associates
     const activePeople = await db
       .select({ id: people.id, fullName: people.fullName })
       .from(people)
@@ -180,7 +172,6 @@ export async function abscondingDetectionHandler(req: Request, res: Response) {
     const flagged: Array<{ personId: number; name: string; lastCheckIn: string | null }> = [];
 
     for (const person of activePeople) {
-      // Check if they have any check_in events in the last 3 days
       const recentEvents = await db
         .select({ id: shiftEvents.id, occurredAt: shiftEvents.occurredAt })
         .from(shiftEvents)
@@ -194,7 +185,6 @@ export async function abscondingDetectionHandler(req: Request, res: Response) {
         .limit(1);
 
       if (recentEvents.length === 0) {
-        // Check if they have approved leave covering this period
         const today = now.toISOString().split("T")[0];
         const approvedLeave = await db
           .select({ id: leaveApplications.id })
@@ -210,7 +200,6 @@ export async function abscondingDetectionHandler(req: Request, res: Response) {
           .limit(1);
 
         if (approvedLeave.length === 0) {
-          // Get last check-in date for context
           const lastEvent = await db
             .select({ occurredAt: shiftEvents.occurredAt })
             .from(shiftEvents)
