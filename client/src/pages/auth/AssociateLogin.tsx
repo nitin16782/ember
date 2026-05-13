@@ -32,7 +32,7 @@ export default function AssociateLogin() {
     setError(null); setSubmitting(true);
     try {
       await loginWithOtp(phone, code);
-      setLocation("/");
+      setLocation("/associate/attendance");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Incorrect code");
     } finally { setSubmitting(false); }

@@ -6,8 +6,10 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import { OwnerLayout } from "./components/OwnerLayout";
+import { AssociateLayout } from "./components/AssociateLayout";
 import { RequireAuth } from "./components/RequireAuth";
-import { lazy, Suspense } from "react";
+import { useAuth } from "./contexts/AuthContext";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 
 // Auth pages
@@ -48,6 +50,7 @@ const AuditLog = lazy(() => import("./pages/AuditLog"));
 const Settings = lazy(() => import("./pages/Settings"));
 const OwnerPortal = lazy(() => import("./pages/OwnerPortal"));
 const Anomalies = lazy(() => import("./pages/Anomalies"));
+const AttendanceHome = lazy(() => import("./pages/associate/AttendanceHome"));
 
 function PageLoader() {
   return (
@@ -95,9 +98,24 @@ function Router() {
         <Redirect to="/portal" />
       </Route>
 
+      {/* Associate mobile area — role-gated to "associate" */}
+      <Route path="/associate/:rest*">
+        <RequireAuth allowedRoles={["associate"]} loginPath="/login/associate">
+          <AssociateLayout>
+            <Suspense fallback={<PageLoader />}>
+              <Switch>
+                <Route path="/associate/attendance" component={AttendanceHome} />
+                <Route><Redirect to="/associate/attendance" /></Route>
+              </Switch>
+            </Suspense>
+          </AssociateLayout>
+        </RequireAuth>
+      </Route>
+
       {/* Staff routes — DashboardLayout, all gated */}
       <Route>
         <RequireAuth>
+          <BounceAssociates>
           <DashboardLayout>
             <Suspense fallback={<PageLoader />}>
               <Switch>
@@ -134,10 +152,20 @@ function Router() {
               </Switch>
             </Suspense>
           </DashboardLayout>
+          </BounceAssociates>
         </RequireAuth>
       </Route>
     </Switch>
   );
+}
+
+/** Bounce associate-role users to /associate/attendance if they hit a staff route. */
+function BounceAssociates({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (user?.role === "associate") {
+    return <Redirect to="/associate/attendance" />;
+  }
+  return <>{children}</>;
 }
 
 function App() {
