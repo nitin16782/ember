@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { authRouter } from "./routers/auth";
+import { attendanceRouter } from "./routers/attendance";
 import { z } from "zod";
 import * as db from "./db";
 import { mergeTemplate, wrapContractHtml, buildMergeValues, storeContractDocument } from "./services/contractMerge";
@@ -174,29 +175,7 @@ export const appRouter = router({
   }),
 
   // ─── Attendance ─────────────────────────────────────────────────
-  attendance: router({
-    list: protectedProcedure
-      .input(z.object({ personId: idOpt, propertyId: idOpt, from: z.date().optional(), to: z.date().optional(), limit: z.number().optional() }).optional())
-      .query(async ({ input }) => db.listShiftEvents(input ?? {})),
-    create: protectedProcedure
-      .input(z.object({
-        personId: id,
-        propertyId: idOpt,
-        eventType: z.enum(["check_in", "break_start", "break_end", "check_out"]),
-        occurredAt: z.date(),
-        markMode: z.enum(["verified_self", "supervisor_marked", "imported", "retro_edit"]),
-        markedBy: id,
-        gpsLat: z.string().optional(),
-        gpsLng: z.string().optional(),
-        withinGeofence: z.boolean().optional(),
-        shiftSessionId: z.string().optional(),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        const newId = await db.createShiftEvent(input);
-        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "shift_event", entityId: newId, afterValue: input });
-        return { id: newId };
-      }),
-  }),
+  attendance: attendanceRouter,
 
   // ─── Leave ──────────────────────────────────────────────────────
   leave: router({

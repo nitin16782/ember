@@ -15,6 +15,13 @@
       "when": 1778696131223,
       "tag": "0001_curved_preak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778698274227,
+      "tag": "0002_silky_strong_guy",
+      "breakpoints": true
     }
   ]
 }

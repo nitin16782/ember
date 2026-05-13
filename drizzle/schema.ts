@@ -428,6 +428,25 @@ export const dailySummaries = mysqlTable("daily_summaries", {
 export type DailySummary = typeof dailySummaries.$inferSelect;
 export type InsertDailySummary = typeof dailySummaries.$inferInsert;
 
+// ─── Module 5c: Attendance edit requests (associate → supervisor) ───
+export const attendanceEditRequests = mysqlTable("attendance_edit_requests", {
+  id: uuidPk(),
+  eventId: fk("eventId").references(() => shiftEvents.id).notNull(),
+  requestedBy: fk("requestedBy").references(() => users.id).notNull(),
+  newEventAt: timestamp("newEventAt").notNull(),
+  reason: varchar("reason", { length: 500 }).notNull(),
+  status: mysqlEnum("editRequestStatus", ["pending", "approved", "rejected"]).default("pending").notNull(),
+  reviewedBy: fk("reviewedBy").references(() => users.id),
+  reviewedAt: timestamp("reviewedAt"),
+  reviewNote: varchar("reviewNote", { length: 500 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("attendance_edit_requests_event_idx").on(table.eventId),
+  index("attendance_edit_requests_status_idx").on(table.status, table.createdAt),
+]);
+
+export type AttendanceEditRequest = typeof attendanceEditRequests.$inferSelect;
+
 // ─── Module 7: Payroll ──────────────────────────────────────────────
 export const payrollRuns = mysqlTable("payroll_runs", {
   id: uuidPk(),
