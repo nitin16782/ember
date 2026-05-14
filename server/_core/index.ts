@@ -18,6 +18,10 @@ async function startServer() {
   validateEnv();
 
   const app = express();
+  // Railway sits exactly one proxy hop in front of the app.
+  // Setting this to 1 (not true) means we only trust the immediate proxy
+  // and reject spoofed X-Forwarded-For headers from further upstream.
+  app.set("trust proxy", 1);
   const server = createServer(app);
 
   app.use(express.json({ limit: "50mb" }));
