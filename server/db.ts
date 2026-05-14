@@ -14,6 +14,7 @@ import {
   notifications, auditLog, feeStructures, slas,
   type InsertPerson,
 } from "../drizzle/schema";
+import { normalisePhone } from "./services/sms";
 
 let _pool: Pool | null = null;
 let _db: MySql2Database | null = null;
@@ -177,9 +178,24 @@ export async function provisionUserForPerson(input: {
   const db = await getDb();
   if (!db) return undefined;
 
+  // Canonicalise the phone to the digits-only form (matches MSG91's
+  // expectation and the lookup variants in findUserByIdentifier).
+  const canonicalPhone = input.phone ? normalisePhone(input.phone) : null;
+  const lowerEmail = input.email?.toLowerCase() ?? null;
+
+  // Match against every variant we might already have stored from
+  // before phone canonicalisation landed — so re-running this on a
+  // legacy row finds the existing user rather than creating a duplicate.
+  const phoneVariants: string[] = [];
+  if (input.phone) phoneVariants.push(input.phone.trim());
+  if (canonicalPhone) {
+    phoneVariants.push(canonicalPhone);
+    phoneVariants.push(`+${canonicalPhone}`);
+  }
+
   const conditions = [];
-  if (input.phone) conditions.push(eq(users.phone, input.phone));
-  if (input.email) conditions.push(eq(users.email, input.email.toLowerCase()));
+  for (const variant of Array.from(new Set(phoneVariants))) conditions.push(eq(users.phone, variant));
+  if (lowerEmail) conditions.push(eq(users.email, lowerEmail));
   if (conditions.length === 0) return undefined;
 
   const [existing] = await db
@@ -200,7 +216,7 @@ export async function provisionUserForPerson(input: {
     await db.insert(users).values({
       id: newUserId,
       email,
-      phone: input.phone,
+      phone: canonicalPhone,
       name: input.name,
       role: "associate",
       isActive: true,
