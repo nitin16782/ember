@@ -13,6 +13,7 @@ import { registerAllJobs, stopAllJobs, getJobStatus, buildHttpTrigger } from "..
 import { getDb } from "../db";
 import { users, authCredentials } from "../../drizzle/schema";
 import { hashPassword, validatePasswordStrength } from "../services/auth";
+import { runBackfillUserAccounts } from "../scripts/backfillUserAccounts";
 
 async function startServer() {
   validateEnv();
@@ -130,6 +131,31 @@ async function startServer() {
       res.json({ ok: true, userId, email });
     } catch (err) {
       console.error("[bootstrap] error:", err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+    }
+  });
+
+  // One-shot maintenance: backfill orphan people without users rows and
+  // canonicalise users.phone. Gated on ADMIN_BOOTSTRAP_SECRET — same
+  // secret bootstrap-admin uses so operators don't need a second one.
+  // Idempotent (uses provisionUserForPerson which reuses existing rows).
+  app.post("/api/internal/backfill-users", async (req, res) => {
+    const expected = process.env.ADMIN_BOOTSTRAP_SECRET;
+    if (!expected) {
+      res.status(503).json({ error: "Maintenance disabled (no secret configured)" });
+      return;
+    }
+    const header = req.headers["x-bootstrap-secret"];
+    if (header !== expected) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    try {
+      const result = await runBackfillUserAccounts();
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error("[backfill-users] error:", err);
       res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
     }
   });
