@@ -3,6 +3,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { authRouter } from "./routers/auth";
 import { attendanceRouter } from "./routers/attendance";
+import { usersRouter } from "./routers/users";
 import { z } from "zod";
 import * as db from "./db";
 import { mergeTemplate, wrapContractHtml, buildMergeValues, storeContractDocument } from "./services/contractMerge";
@@ -16,6 +17,7 @@ const idOpt = id.optional();
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
+  users: usersRouter,
 
   // ─── Dashboard ──────────────────────────────────────────────────
   dashboard: router({
