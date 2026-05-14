@@ -145,8 +145,77 @@ export async function createPerson(data: InsertPerson) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const id = data.id ?? newId();
-  await db.insert(people).values({ ...data, id });
+
+  // Provision a `users` row so the associate can sign in by phone (or
+  // email) via the OTP / magic-link flows. Idempotent: if a users row
+  // already exists with the same phone or email, reuse it and link
+  // people.userId to it — don't overwrite the existing user's role.
+  const userId = data.userId ?? await provisionUserForPerson({
+    phone: data.primaryPhone ?? null,
+    email: data.email ?? null,
+    name: data.fullName,
+  });
+
+  await db.insert(people).values({ ...data, id, userId });
   return id;
+}
+
+/**
+ * Returns the userId for a person — reusing an existing users row when
+ * one already exists with the same phone or email, or inserting a fresh
+ * one with role="associate" otherwise. Safe to call repeatedly.
+ *
+ * Phone-only or email-only inputs are supported. If neither is provided,
+ * returns undefined and the person record will be unlinked (rare; the
+ * schema requires primaryPhone so this only triggers for direct DB writes).
+ */
+export async function provisionUserForPerson(input: {
+  phone: string | null;
+  email: string | null;
+  name: string;
+}): Promise<string | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const conditions = [];
+  if (input.phone) conditions.push(eq(users.phone, input.phone));
+  if (input.email) conditions.push(eq(users.email, input.email.toLowerCase()));
+  if (conditions.length === 0) return undefined;
+
+  const [existing] = await db
+    .select()
+    .from(users)
+    .where(conditions.length === 1 ? conditions[0] : or(...conditions))
+    .limit(1);
+  if (existing) return existing.id;
+
+  const newUserId = newId();
+  // users.email is UNIQUE NOT NULL; synthesize a placeholder when the
+  // person record doesn't have one so the constraint is satisfied
+  // without leaking a real address. Phone-based login still works.
+  const email = input.email?.toLowerCase()
+    ?? `assoc-${newUserId.slice(0, 8)}@firebrick.local`;
+
+  try {
+    await db.insert(users).values({
+      id: newUserId,
+      email,
+      phone: input.phone,
+      name: input.name,
+      role: "associate",
+      isActive: true,
+    });
+    return newUserId;
+  } catch {
+    // Race: another writer inserted a matching user between our SELECT
+    // and INSERT. Re-query to recover the canonical row.
+    const [retry] = await db
+      .select()
+      .from(users)
+      .where(conditions.length === 1 ? conditions[0] : or(...conditions))
+      .limit(1);
+    return retry?.id;
+  }
 }
 
 export async function updatePerson(id: string, data: Partial<InsertPerson>) {
