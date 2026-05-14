@@ -4,17 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Settings as SettingsIcon, Shield, Users, Building2, Bell, Database, Globe } from "lucide-react";
+import { Settings as SettingsIcon, Shield, Building2, Bell, Database, Globe, UsersRound } from "lucide-react";
 import { toast } from "sonner";
-
-const roles = [
-  { code: "super_admin", label: "Super Admin", description: "Full system access, RBAC configuration, audit log access", users: 1 },
-  { code: "ops_lead", label: "Operations Lead", description: "Manage properties, staff assignments, daily ops, expenses up to ₹10,000", users: 3 },
-  { code: "area_manager", label: "Area Manager", description: "Multi-property oversight, approve expenses up to ₹50,000, payroll review", users: 2 },
-  { code: "finance", label: "Finance", description: "Invoicing, payments, payroll processing, expense reconciliation", users: 2 },
-  { code: "hr", label: "HR", description: "People management, hiring, onboarding, contracts, leave policies", users: 1 },
-  { code: "associate", label: "Associate", description: "Self-service: attendance, leave, payslips, ID card, training", users: 45 },
-];
+import { UsersTab } from "./settings/UsersTab";
 
 const rbacPermissions = [
   { module: "People", permissions: ["view_all", "create", "edit", "delete", "approve_leave", "process_payroll"] },
@@ -32,37 +24,25 @@ export default function Settings() {
         <p className="text-sm text-muted-foreground mt-0.5">System configuration, RBAC, and integration management</p>
       </div>
 
-      <Tabs defaultValue="rbac" className="space-y-4">
+      <Tabs defaultValue="users" className="space-y-4">
         <TabsList className="bg-cream border border-border/50 flex-wrap h-auto gap-1 p-1">
+          <TabsTrigger value="users"><UsersRound className="h-4 w-4 mr-1.5" />Users</TabsTrigger>
           <TabsTrigger value="rbac"><Shield className="h-4 w-4 mr-1.5" />RBAC</TabsTrigger>
           <TabsTrigger value="general"><SettingsIcon className="h-4 w-4 mr-1.5" />General</TabsTrigger>
           <TabsTrigger value="integrations"><Globe className="h-4 w-4 mr-1.5" />Integrations</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="users">
+          <UsersTab />
+        </TabsContent>
+
         <TabsContent value="rbac" className="space-y-4">
           <Card className="border-border/50 bg-navy/5">
             <CardContent className="p-4 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground text-sm mb-1">Role-Based Access Control</p>
-              <p>All RBAC thresholds are overridable at both the role level and the individual user level. Permissions cascade from role defaults but can be customized per user.</p>
+              <p className="font-medium text-foreground text-sm mb-1">Permission Matrix</p>
+              <p>These are the per-module permissions each role can hold. Role defaults are defined in the codebase; per-user overrides will be configurable here in a future release.</p>
             </CardContent>
           </Card>
-
-          <div className="space-y-2">
-            {roles.map((role) => (
-              <Card key={role.code} className="border-border/50 hover:shadow-sm transition-shadow cursor-pointer" onClick={() => toast.info(`Editing role: ${role.label}`)}>
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-lg bg-navy/5 flex items-center justify-center"><Shield className="h-4 w-4 text-navy" /></div>
-                    <div>
-                      <p className="font-medium text-sm">{role.label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{role.description}</p>
-                    </div>
-                  </div>
-                  <Badge variant="outline" className="text-xs"><Users className="h-3 w-3 mr-1" />{role.users}</Badge>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
 
           <Card className="border-border/50">
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-navy">Permission Matrix</CardTitle></CardHeader>
