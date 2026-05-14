@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Users, Phone, Mail, ChevronRight, Upload, Shield } from "lucide-react";
+import { Plus, Search, Users, Phone, Mail, ChevronRight, Upload, Shield, Trash2 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -50,6 +51,18 @@ export default function People() {
       utils.people.stats.invalidate();
       setDialogOpen(false);
       toast.success("Associate added successfully");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+
+  const deleteMutation = trpc.people.delete.useMutation({
+    onSuccess: () => {
+      utils.people.list.invalidate();
+      utils.people.stats.invalidate();
+      toast.success(`${deleteTarget?.name ?? "Associate"} deleted`);
+      setDeleteTarget(null);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -229,6 +242,15 @@ export default function People() {
                     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={(e) => { e.stopPropagation(); toast.info(`Deployable status check: Verifying documents, training, and background check for ${person.fullName}`); }}>
                       <Shield className="h-3.5 w-3.5 mr-1" />Deploy
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      aria-label={`Delete ${person.fullName}`}
+                      onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: person.id, name: person.fullName }); }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </div>
@@ -245,6 +267,27 @@ export default function People() {
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-navy">Delete associate?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <span className="font-medium">{deleteTarget?.name}</span> and cannot be undone. If this associate has attendance, shifts, or contracts on file, deletion will be blocked — mark them as Exited instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              disabled={deleteMutation.isPending}
+              onClick={(e) => { e.preventDefault(); if (deleteTarget) deleteMutation.mutate({ id: deleteTarget.id }); }}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

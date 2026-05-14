@@ -155,6 +155,12 @@ export async function updatePerson(id: string, data: Partial<InsertPerson>) {
   await db.update(people).set(data).where(eq(people.id, id));
 }
 
+export async function deletePerson(id: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(people).where(eq(people.id, id));
+}
+
 export async function getPeopleStats() {
   const db = await getDb();
   if (!db) return { total: 0, active: 0, onLeave: 0, exited: 0 };

@@ -81,6 +81,32 @@ export const appRouter = router({
         });
         return { success: true };
       }),
+    delete: protectedProcedure
+      .input(z.object({ id }))
+      .mutation(async ({ input, ctx }) => {
+        const before = await db.getPersonById(input.id);
+        if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "Associate not found" });
+        try {
+          await db.deletePerson(input.id);
+        } catch (err: any) {
+          if (err?.code === "ER_ROW_IS_REFERENCED_2" || err?.errno === 1451) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Cannot delete: this associate has related records (attendance, shifts, contracts, etc.). Mark them as Exited instead.",
+            });
+          }
+          throw err;
+        }
+        await db.writeAuditLog({
+          actorId: ctx.user.id,
+          actorRole: ctx.user.role,
+          action: "delete",
+          entityType: "person",
+          entityId: input.id,
+          beforeValue: before,
+        });
+        return { success: true };
+      }),
     stats: protectedProcedure.query(async () => db.getPeopleStats()),
   }),
 
