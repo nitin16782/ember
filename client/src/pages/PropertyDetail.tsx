@@ -3,15 +3,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Building2, MapPin, BedDouble, Bath, Ruler } from "lucide-react";
+import { ArrowLeft, Building2, MapPin, BedDouble, Bath, Ruler, Pencil } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useState } from "react";
+import { PropertyEditDialog } from "./properties/PropertyEditDialog";
 
 export default function PropertyDetail() {
   const params = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const id = params.id ?? "";
   const { data: property, isLoading } = trpc.properties.get.useQuery({ id }, { enabled: !!id });
+  const [editing, setEditing] = useState(false);
 
   if (isLoading) return <div className="space-y-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-40 w-full" /></div>;
   if (!property) return (
@@ -23,9 +26,14 @@ export default function PropertyDetail() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" onClick={() => setLocation("/properties")} className="gap-2 -ml-2">
-        <ArrowLeft className="h-4 w-4" /> Back to Properties
-      </Button>
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" onClick={() => setLocation("/properties")} className="gap-2 -ml-2">
+          <ArrowLeft className="h-4 w-4" /> Back to Properties
+        </Button>
+        <Button onClick={() => setEditing(true)} className="bg-navy hover:bg-navy/90 gap-2">
+          <Pencil className="h-4 w-4" /> Edit property
+        </Button>
+      </div>
       <Card className="border-border/50">
         <CardContent className="p-6">
           <div className="flex items-start gap-5">
@@ -48,6 +56,12 @@ export default function PropertyDetail() {
           </div>
         </CardContent>
       </Card>
+
+      <PropertyEditDialog
+        open={editing}
+        onOpenChange={setEditing}
+        property={property as any}
+      />
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="bg-muted/50">
