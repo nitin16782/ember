@@ -17,8 +17,8 @@ CREATE TABLE `attendance_audit_log` (
 ALTER TABLE `attendance_audit_log` ADD CONSTRAINT `attendance_audit_log_actorUserId_users_id_fk` FOREIGN KEY (`actorUserId`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `attendance_audit_log` ADD CONSTRAINT `attendance_audit_log_targetPersonId_people_id_fk` FOREIGN KEY (`targetPersonId`) REFERENCES `people`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `attendance_audit_log` ADD CONSTRAINT `attendance_audit_log_targetEventId_shift_events_id_fk` FOREIGN KEY (`targetEventId`) REFERENCES `shift_events`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `attendance_audit_log` ADD CONSTRAINT `attendance_audit_log_targetEditRequestId_attendance_edit_requests_id_fk` FOREIGN KEY (`targetEditRequestId`) REFERENCES `attendance_edit_requests`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `attendance_audit_log` ADD CONSTRAINT `attendance_audit_log_targetSummaryId_daily_summaries_id_fk` FOREIGN KEY (`targetSummaryId`) REFERENCES `daily_summaries`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `attendance_audit_log` ADD CONSTRAINT `attendance_audit_log_targetEditRequestId_fk` FOREIGN KEY (`targetEditRequestId`) REFERENCES `attendance_edit_requests`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `attendance_audit_log` ADD CONSTRAINT `attendance_audit_log_targetSummaryId_fk` FOREIGN KEY (`targetSummaryId`) REFERENCES `daily_summaries`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX `attendance_audit_actor_idx` ON `attendance_audit_log` (`actorUserId`,`createdAt`);--> statement-breakpoint
 CREATE INDEX `attendance_audit_target_person_idx` ON `attendance_audit_log` (`targetPersonId`,`createdAt`);--> statement-breakpoint
 CREATE INDEX `attendance_audit_action_idx` ON `attendance_audit_log` (`attendanceAuditAction`,`createdAt`);--> statement-breakpoint
