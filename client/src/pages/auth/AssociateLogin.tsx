@@ -16,9 +16,20 @@ export default function AssociateLogin() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Strip non-digits + leading "91" prefix to validate the underlying
+  // subscriber number. India: 10 digits. International: 8-15 digits.
+  const phoneDigits = phone.replace(/\D/g, "");
+  const subscriberDigits = phoneDigits.startsWith("91") ? phoneDigits.slice(2) : phoneDigits;
+  const isPhoneValid = subscriberDigits.length === 10 || (phoneDigits.length >= 8 && phoneDigits.length <= 15);
+
   async function sendCode(e: React.FormEvent) {
     e.preventDefault();
-    setError(null); setSubmitting(true);
+    setError(null);
+    if (!isPhoneValid) {
+      setError("Enter a 10-digit Indian mobile number (e.g. 9876543210 or +91 98765 43210).");
+      return;
+    }
+    setSubmitting(true);
     try {
       await requestOtp(phone);
       setStep("code");
@@ -57,7 +68,7 @@ export default function AssociateLogin() {
           {error && (
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>
           )}
-          <Button type="submit" disabled={submitting} className="w-full bg-[#1A3A5C] hover:bg-[#15304d]">
+          <Button type="submit" disabled={submitting || !isPhoneValid} className="w-full bg-[#1A3A5C] hover:bg-[#15304d]">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send code"}
           </Button>
         </form>
