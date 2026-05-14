@@ -32,6 +32,14 @@ export const ENV = {
   msg91TemplateIdOtp: process.env.MSG91_TEMPLATE_ID_OTP ?? "",
   msg91SenderId: process.env.MSG91_SENDER_ID ?? "",
 
+  // MSG91 — WhatsApp OTP. Preferred path in India because WhatsApp's
+  // Meta-approved templates sidestep TRAI's DLT registration entirely.
+  // When all three of these are set, requestOtp routes through
+  // WhatsApp instead of SMS.
+  msg91WaIntegratedNumber: process.env.MSG91_WA_INTEGRATED_NUMBER ?? "",
+  msg91WaTemplateName: process.env.MSG91_WA_TEMPLATE_NAME ?? "",
+  msg91WaTemplateLang: process.env.MSG91_WA_TEMPLATE_LANG ?? "en",
+
   // Email (used by Prompt 3)
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   resendFromEmail: process.env.RESEND_FROM_EMAIL ?? "ember@firebrick.one",

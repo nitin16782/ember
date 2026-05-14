@@ -14,6 +14,7 @@ import {
 } from "../services/auth";
 import { sendEmail, magicLinkEmail, otpEmail } from "../services/email";
 import { sendOtpSms, normalisePhone } from "../services/sms";
+import { sendOtpWhatsApp, isWhatsAppOtpConfigured } from "../services/whatsapp";
 import { ENV } from "../_core/env";
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -194,11 +195,22 @@ export const authRouter = router({
       const { code } = await generateOtp(identifier, identifierType, input.purpose);
 
       if (identifierType === "phone") {
-        const result = await sendOtpSms({ to: identifier, code });
-        if (!result.ok) {
-          // Log but don't fail the request — we don't leak whether
-          // a number is valid. User retries if no code arrives.
-          console.error("[auth] OTP SMS delivery failed:", result.error);
+        // Prefer WhatsApp when the operator has set up a Meta-approved
+        // template — bypasses TRAI/DLT, which silently drops SMS for
+        // unregistered templates in India. Falls back to SMS when WA
+        // isn't configured.
+        if (isWhatsAppOtpConfigured()) {
+          const result = await sendOtpWhatsApp({ to: identifier, code });
+          if (!result.ok) {
+            console.error("[auth] OTP WhatsApp delivery failed:", result.error);
+          }
+        } else {
+          const result = await sendOtpSms({ to: identifier, code });
+          if (!result.ok) {
+            // Log but don't fail the request — we don't leak whether
+            // a number is valid. User retries if no code arrives.
+            console.error("[auth] OTP SMS delivery failed:", result.error);
+          }
         }
       } else {
         const user = await findUserByIdentifier(identifier);
