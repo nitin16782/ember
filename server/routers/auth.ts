@@ -165,7 +165,11 @@ export const authRouter = router({
         const user = await findUserByIdentifier(identifier);
         const name = user?.name ?? "there";
         const tmpl = otpEmail(name, code, 10);
-        await sendEmail({ to: identifier, subject: tmpl.subject, html: tmpl.html, text: tmpl.text });
+        const result = await sendEmail({ to: identifier, subject: tmpl.subject, html: tmpl.html, text: tmpl.text });
+        if (!result.ok) {
+          // Mirror the SMS path: log internally but don't leak success/failure to caller.
+          console.error("[auth] OTP email delivery failed:", result.error);
+        }
       }
 
       return { ok: true, expiresInMin: 10 };
@@ -210,7 +214,12 @@ export const authRouter = router({
           : "http://localhost:3000";
         const url = `${base}/auth/magic?token=${token}`;
         const tmpl = magicLinkEmail(user.name ?? "there", url, 15);
-        await sendEmail({ to: input.email, subject: tmpl.subject, html: tmpl.html, text: tmpl.text });
+        const result = await sendEmail({ to: input.email, subject: tmpl.subject, html: tmpl.html, text: tmpl.text });
+        if (!result.ok) {
+          // Log internally; response stays generic so we don't leak whether
+          // the email exists in the system.
+          console.error("[auth] Magic-link email delivery failed:", result.error);
+        }
       } else {
         await new Promise(r => setTimeout(r, 200));
       }

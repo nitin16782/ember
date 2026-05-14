@@ -160,10 +160,14 @@ const createUser = rolesProcedure(...ADMIN_ROLES)
         const base = ENV.isProduction ? `https://${ENV.staffHostname}` : "http://localhost:3000";
         const url = `${base}/auth/magic?token=${token}`;
         const tmpl = magicLinkEmail(input.name, url, 15);
-        await sendEmail({ to: email, subject: tmpl.subject, html: tmpl.html, text: tmpl.text });
-        magicLinkSent = true;
+        const result = await sendEmail({ to: email, subject: tmpl.subject, html: tmpl.html, text: tmpl.text });
+        if (result.ok) {
+          magicLinkSent = true;
+        } else {
+          console.error("[users.createUser] magic-link send failed:", result.error);
+        }
       } catch (err) {
-        console.error("[users.createUser] magic-link send failed:", err);
+        console.error("[users.createUser] magic-link send threw:", err);
       }
     }
 
@@ -290,10 +294,18 @@ const sendMagicLink = rolesProcedure(...ADMIN_ROLES)
       const base = ENV.isProduction ? `https://${ENV.staffHostname}` : "http://localhost:3000";
       const url = `${base}/auth/magic?token=${token}`;
       const tmpl = magicLinkEmail(target.name ?? "there", url, 15);
-      await sendEmail({ to: target.email, subject: tmpl.subject, html: tmpl.html, text: tmpl.text });
+      const result = await sendEmail({ to: target.email, subject: tmpl.subject, html: tmpl.html, text: tmpl.text });
+      if (!result.ok) {
+        console.error("[users.sendMagicLink] send failed:", result.error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Email delivery failed${result.error ? `: ${result.error}` : ""}`,
+        });
+      }
       return { ok: true };
     } catch (err) {
-      console.error("[users.sendMagicLink] failed:", err);
+      if (err instanceof TRPCError) throw err;
+      console.error("[users.sendMagicLink] threw:", err);
       throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Could not send magic link" });
     }
   });
