@@ -13,7 +13,7 @@ import {
   recordFailedLogin, clearFailedLogins, isAccountLocked,
 } from "../services/auth";
 import { sendEmail, magicLinkEmail, otpEmail } from "../services/email";
-import { sendOtpSms } from "../services/sms";
+import { sendOtpSms, normalisePhone } from "../services/sms";
 import { ENV } from "../_core/env";
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -27,14 +27,50 @@ function clientCtx(ctx: Context): { userAgent?: string; ip?: string } {
   };
 }
 
+/**
+ * Resolve a user from a raw login identifier (email or phone).
+ *
+ * For phones, accept any common format the operator might type or that a
+ * legacy row might already be stored in:
+ *   "9711619114", "+919711619114", "919711619114", "+91 97116 19114"
+ * all resolve to the same user. We canonicalise the input to the digits-
+ * only form (the same one MSG91 expects) and additionally OR-match on a
+ * few common variants so rows written before phone canonicalisation
+ * landed still resolve.
+ */
 async function findUserByIdentifier(identifier: string): Promise<User | null> {
   const db = await getDb();
   if (!db) return null;
   const trimmed = identifier.trim();
+  const isPhoneLike = /^[+\d][\d\s-]+$/.test(trimmed);
+
+  if (isPhoneLike) {
+    const canonical = normalisePhone(trimmed); // digits only, e.g. 919711619114
+    const variants = new Set<string>([
+      trimmed,
+      trimmed.replace(/\s/g, ""),
+      canonical,
+      `+${canonical}`,
+    ]);
+    // Bare 10-digit Indian number → also try with country code
+    if (canonical.length > 10) variants.add(canonical.slice(-10));
+
+    const [user] = await db.select().from(users)
+      .where(or(...Array.from(variants).map((v) => eq(users.phone, v))))
+      .limit(1);
+    if (!user) {
+      console.warn(`[auth] no user found for phone variants: ${Array.from(variants).join(", ")}`);
+    }
+    return user ?? null;
+  }
+
   const normalized = trimmed.toLowerCase();
   const [user] = await db.select().from(users)
-    .where(or(eq(users.email, normalized), eq(users.phone, trimmed)))
+    .where(eq(users.email, normalized))
     .limit(1);
+  if (!user) {
+    console.warn(`[auth] no user found for email: ${normalized}`);
+  }
   return user ?? null;
 }
 
@@ -140,13 +176,16 @@ export const authRouter = router({
     .mutation(async ({ input }) => {
       const isPhone = /^[+\d][\d\s-]+$/.test(input.identifier);
       const identifierType: "phone" | "email" = isPhone ? "phone" : "email";
+      // Canonicalize phones to the digits-only form so OTP storage,
+      // user lookup, and MSG91 delivery all agree on the same key.
       const identifier = isPhone
-        ? input.identifier.replace(/\s/g, "")
+        ? normalisePhone(input.identifier)
         : input.identifier.trim().toLowerCase();
 
       if (input.purpose === "login") {
         const user = await findUserByIdentifier(identifier);
         if (!user || !user.isActive) {
+          console.warn(`[auth] requestOtp: no active user for identifier "${identifier}" — returning ok without sending`);
           await new Promise(r => setTimeout(r, 200));
           return { ok: true, expiresInMin: 10 };
         }
@@ -184,7 +223,7 @@ export const authRouter = router({
     .mutation(async ({ input, ctx }) => {
       const isPhone = /^[+\d][\d\s-]+$/.test(input.identifier);
       const identifier = isPhone
-        ? input.identifier.replace(/\s/g, "")
+        ? normalisePhone(input.identifier)
         : input.identifier.trim().toLowerCase();
 
       const result = await verifyOtp(identifier, input.code, "login");
