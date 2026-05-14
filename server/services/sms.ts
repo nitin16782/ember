@@ -77,6 +77,9 @@ export async function sendOtpSms(msg: SmsOtpMessage): Promise<SmsResult> {
   if (ENV.msg91TemplateIdOtp) payload.template_id = ENV.msg91TemplateIdOtp;
   if (ENV.msg91SenderId) payload.sender = ENV.msg91SenderId;
 
+  // Mask the OTP in logs so a leaked log file isn't an account takeover.
+  const loggablePayload = { ...payload, otp: "******" };
+
   try {
     const resp = await getClient().post("/otp", payload, {
       headers: { authkey: ENV.msg91AuthKey },
@@ -84,12 +87,28 @@ export async function sendOtpSms(msg: SmsOtpMessage): Promise<SmsResult> {
 
     if (resp.data?.type === "success") {
       const id = resp.data.request_id ?? resp.data.message ?? "ok";
-      console.log("[sms] MSG91 OTP sent:", { to: phone, request_id: id });
+      console.log("[sms] MSG91 OTP sent:", {
+        to: phone,
+        request_id: id,
+        // Surface the full response body — MSG91 sometimes returns
+        // type=success while still dropping the SMS upstream (DLT
+        // template not approved, sender not registered, DND, etc.).
+        // The dashboard at https://control.msg91.com/app/logs/sms is
+        // the source of truth for delivery — this log just confirms
+        // the API accepted the request.
+        response: resp.data,
+        request: loggablePayload,
+      });
       return { ok: true, id: String(id), raw: resp.data };
     }
 
     const errMsg = resp.data?.message ?? "MSG91 returned non-success";
-    console.error("[sms] MSG91 OTP send failed:", errMsg, resp.data);
+    console.error("[sms] MSG91 OTP send failed:", {
+      to: phone,
+      error: errMsg,
+      response: resp.data,
+      request: loggablePayload,
+    });
     return { ok: false, error: errMsg, raw: resp.data };
   } catch (err) {
     const axiosErr = err as {
@@ -100,11 +119,12 @@ export async function sendOtpSms(msg: SmsOtpMessage): Promise<SmsResult> {
       typeof axiosErr.response?.data === "object" && axiosErr.response?.data !== null
         ? JSON.stringify(axiosErr.response.data)
         : axiosErr.message ?? String(err);
-    console.error(
-      "[sms] MSG91 OTP send threw:",
-      axiosErr.response?.status ?? "no-status",
-      msgText
-    );
+    console.error("[sms] MSG91 OTP send threw:", {
+      to: phone,
+      status: axiosErr.response?.status ?? "no-status",
+      error: msgText,
+      request: loggablePayload,
+    });
     return { ok: false, error: msgText };
   }
 }
