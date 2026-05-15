@@ -54,6 +54,16 @@ const mockAuditTrail = [
 export default function Attendance() {
   const queryInput = useMemo(() => ({ limit: 200 }), []);
   const { data: events, isLoading } = trpc.attendance.list.useQuery(queryInput);
+  // Resolve personId → fullName so the table doesn't surface raw UUIDs.
+  // 500 matches the convention used by Onboarding / PropertyDetail.
+  const { data: peopleRows } = trpc.people.list.useQuery({ limit: 500 });
+  const personNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    (peopleRows ?? []).forEach((p: any) => m.set(p.id, p.fullName));
+    return m;
+  }, [peopleRows]);
+  const displayName = (personId: string) =>
+    personNameById.get(personId) ?? `Person ${personId.slice(0, 8)}`;
   const [selectedDate] = useState(() => new Date().toLocaleDateString());
 
   const dailyRecords = useMemo(() => events ? deriveDailyView(events) : [], [events]);
@@ -101,7 +111,7 @@ export default function Attendance() {
                   <TableBody>
                     {dailyRecords.map((r, i) => (
                       <TableRow key={i} className="text-sm">
-                        <TableCell className="font-medium">#{r.personId}</TableCell>
+                        <TableCell className="font-medium">{displayName(r.personId)}</TableCell>
                         <TableCell>{r.date}</TableCell>
                         <TableCell>{r.checkIn ? new Date(r.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}</TableCell>
                         <TableCell>{r.checkOut ? new Date(r.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}</TableCell>
@@ -132,7 +142,7 @@ export default function Attendance() {
                       <span className="text-xs text-muted-foreground">{evt.markMode?.replace("_", " ")}</span>
                       {evt.selfieUrl && <Camera className="h-3 w-3 text-muted-foreground" />}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">Person #{evt.personId} · {evt.occurredAt ? new Date(evt.occurredAt).toLocaleString() : "—"}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{displayName(evt.personId)} · {evt.occurredAt ? new Date(evt.occurredAt).toLocaleString() : "—"}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
