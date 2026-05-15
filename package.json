@@ -15,7 +15,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "create:admin": "tsx server/scripts/createAdmin.ts",
-    "backfill:users": "tsx server/scripts/backfillUserAccounts.ts"
+    "backfill:users": "tsx server/scripts/backfillUserAccounts.ts",
+    "db:seed:pilot": "tsx scripts/seed-pilot.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
@@ -87,6 +88,7 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
+    "xlsx": "0.18.5",
     "zod": "^4.1.12"
   },
   "devDependencies": {
