@@ -15,10 +15,12 @@ import { Loader2 } from "lucide-react";
 // Auth pages
 const StaffLogin = lazy(() => import("./pages/auth/StaffLogin"));
 const AssociateLogin = lazy(() => import("./pages/auth/AssociateLogin"));
+const AssociateOtpLogin = lazy(() => import("./pages/auth/AssociateOtpLogin"));
 const OwnerLogin = lazy(() => import("./pages/auth/OwnerLogin"));
 const MagicLinkRequest = lazy(() => import("./pages/auth/MagicLinkRequest"));
 const MagicLinkConsume = lazy(() => import("./pages/auth/MagicLinkConsume"));
 const SetPassword = lazy(() => import("./pages/auth/SetPassword"));
+const ChangePin = lazy(() => import("./pages/auth/ChangePin"));
 
 // App pages
 const Home = lazy(() => import("./pages/Home"));
@@ -73,6 +75,9 @@ function Router() {
       <Route path="/login/magic">
         <Suspense fallback={<PageLoader />}><MagicLinkRequest /></Suspense>
       </Route>
+      <Route path="/login/associate/otp">
+        <Suspense fallback={<PageLoader />}><AssociateOtpLogin /></Suspense>
+      </Route>
       <Route path="/login/associate">
         <Suspense fallback={<PageLoader />}><AssociateLogin /></Suspense>
       </Route>
@@ -85,6 +90,11 @@ function Router() {
       <Route path="/auth/set-password">
         <RequireAuth>
           <Suspense fallback={<PageLoader />}><SetPassword /></Suspense>
+        </RequireAuth>
+      </Route>
+      <Route path="/auth/change-pin">
+        <RequireAuth>
+          <Suspense fallback={<PageLoader />}><ChangePin /></Suspense>
         </RequireAuth>
       </Route>
 

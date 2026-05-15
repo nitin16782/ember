@@ -157,8 +157,37 @@ export async function createPerson(data: InsertPerson) {
     name: data.fullName,
   });
 
-  await db.insert(people).values({ ...data, id, userId });
+  const employeeCode = data.employeeCode ?? await nextEmployeeCode();
+
+  await db.insert(people).values({ ...data, id, userId, employeeCode });
   return id;
+}
+
+/**
+ * Generate the next sequential employee code (`EMP-NNNN`, 4-digit
+ * zero-padded). Looks at the current max and increments. Length-aware
+ * MAX so "EMP-10000" sorts after "EMP-0999" when we eventually overflow
+ * 4 digits.
+ *
+ * Race-tolerant: if two concurrent createPerson calls compute the same
+ * next code, the UNIQUE constraint on people.employeeCode rejects the
+ * second insert. Callers retry by calling this again — see createPerson.
+ */
+export async function nextEmployeeCode(): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [row] = await db
+    .select({ code: people.employeeCode })
+    .from(people)
+    .where(sql`${people.employeeCode} LIKE 'EMP-%'`)
+    .orderBy(sql`LENGTH(${people.employeeCode}) DESC, ${people.employeeCode} DESC`)
+    .limit(1);
+
+  const current = row?.code ?? null;
+  const n = current ? parseInt(current.slice(4), 10) : 0;
+  const next = Number.isFinite(n) ? n + 1 : 1;
+  return `EMP-${String(next).padStart(4, "0")}`;
 }
 
 /**

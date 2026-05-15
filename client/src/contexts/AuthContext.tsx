@@ -26,6 +26,8 @@ export interface AuthState {
 interface AuthContextValue extends AuthState {
   loginWithPassword: (email: string, password: string) => Promise<void>;
   loginWithOtp: (identifier: string, code: string) => Promise<void>;
+  loginWithEmployeeCode: (code: string, pin: string) => Promise<{ mustChangePin: boolean }>;
+  changeAssociatePin: (currentPin: string, newPin: string) => Promise<void>;
   requestOtp: (identifier: string) => Promise<{ expiresInMin: number }>;
   requestMagicLink: (email: string) => Promise<{ expiresInMin: number }>;
   consumeMagicLink: (token: string) => Promise<void>;
@@ -138,6 +140,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ user: data.user, status: "authenticated" });
   }, []);
 
+  const loginWithEmployeeCode = useCallback(async (code: string, pin: string) => {
+    const data = await rawTrpcCall<{
+      user: AuthUser; accessToken: string; refreshToken: string; expiresAt: string; mustChangePin: boolean;
+    }>("auth.loginWithEmployeeCode", { code, pin });
+    setAccessToken(data.accessToken);
+    saveRefreshToken(data.refreshToken);
+    setState({ user: data.user, status: "authenticated" });
+    return { mustChangePin: data.mustChangePin };
+  }, []);
+
+  const changeAssociatePin = useCallback(async (currentPin: string, newPin: string) => {
+    const data = await rawTrpcCall<{
+      accessToken: string; refreshToken: string;
+    }>("auth.changeAssociatePin", { currentPin, newPin }, getAccessToken());
+    setAccessToken(data.accessToken);
+    saveRefreshToken(data.refreshToken);
+  }, []);
+
   const requestMagicLink = useCallback(async (email: string) => {
     return await rawTrpcCall<{ ok: boolean; expiresInMin: number }>(
       "auth.requestMagicLink", { email }
@@ -167,7 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         ...state,
-        loginWithPassword, loginWithOtp, requestOtp,
+        loginWithPassword, loginWithOtp, loginWithEmployeeCode,
+        changeAssociatePin, requestOtp,
         requestMagicLink, consumeMagicLink,
         logout, refresh,
       }}

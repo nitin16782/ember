@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb, closeDb } from "./db";
 import { users, refreshTokens, authCredentials, magicLinks } from "../drizzle/schema";
 import {
-  hashPassword, verifyPassword, validatePasswordStrength,
+  hashPassword, verifyPassword, validatePasswordStrength, validatePin,
   issueTokens, rotateRefreshToken, revokeRefreshToken,
   generateOtp, verifyOtp,
   signAccessToken, verifyAccessToken,
@@ -132,6 +132,32 @@ d("auth service", () => {
 });
 
 import { normalisePhone } from "./services/sms";
+
+describe("validatePin — associate PIN rules", () => {
+  it("accepts a six-digit non-trivial PIN", () => {
+    expect(validatePin("482917").ok).toBe(true);
+    expect(validatePin("903284").ok).toBe(true);
+  });
+
+  it("rejects wrong length", () => {
+    expect(validatePin("12345").ok).toBe(false);
+    expect(validatePin("1234567").ok).toBe(false);
+    expect(validatePin("").ok).toBe(false);
+  });
+
+  it("rejects non-numeric input", () => {
+    expect(validatePin("12345a").ok).toBe(false);
+    expect(validatePin("abcdef").ok).toBe(false);
+    expect(validatePin("12 456").ok).toBe(false);
+  });
+
+  it("rejects trivial sequences", () => {
+    expect(validatePin("000000").ok).toBe(false);
+    expect(validatePin("111111").ok).toBe(false);
+    expect(validatePin("123456").ok).toBe(false);
+    expect(validatePin("987654").ok).toBe(false);
+  });
+});
 
 describe("sms helpers — phone normalisation", () => {
   it("normalises Indian numbers without country code", () => {

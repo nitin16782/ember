@@ -6,6 +6,8 @@
  *   2. For every `people` row that doesn't yet have a `userId`, provision
  *      a `users` row (or link to an existing one) via the same helper
  *      used by `people.create`.
+ *   3. Assign a sequential `EMP-NNNN` employee code to every `people` row
+ *      that doesn't have one yet — required for the new ID + PIN login.
  *
  * Available two ways:
  *   - CLI:  DATABASE_URL=... pnpm tsx server/scripts/backfillUserAccounts.ts
@@ -13,8 +15,8 @@
  *           (see server/_core/index.ts)
  */
 
-import { isNull, eq, isNotNull, and, ne } from "drizzle-orm";
-import { getDb, provisionUserForPerson } from "../db";
+import { isNull, eq, isNotNull, and, ne, asc } from "drizzle-orm";
+import { getDb, provisionUserForPerson, nextEmployeeCode } from "../db";
 import { people, users } from "../../drizzle/schema";
 import { normalisePhone } from "../services/sms";
 
@@ -27,6 +29,9 @@ export interface BackfillResult {
   reusedExisting: number;
   skipped: { personId: string; name: string; reason: string }[];
   links: { personId: string; name: string; userId: string; mode: "new" | "reused" }[];
+  employeeCodesAssigned: number;
+  employeeCodesAlreadyOk: number;
+  employeeCodeAssignments: { personId: string; name: string; code: string }[];
 }
 
 /**
@@ -46,6 +51,9 @@ export async function runBackfillUserAccounts(): Promise<BackfillResult> {
     reusedExisting: 0,
     skipped: [],
     links: [],
+    employeeCodesAssigned: 0,
+    employeeCodesAlreadyOk: 0,
+    employeeCodeAssignments: [],
   };
 
   // ─── Step 1: canonicalise users.phone ──────────────────────────────
@@ -112,6 +120,33 @@ export async function runBackfillUserAccounts(): Promise<BackfillResult> {
     `reusedExisting=${result.reusedExisting} ` +
     `skipped=${result.skipped.length}`,
   );
+
+  // ─── Step 3: assign employee codes to people that don't have one ───
+  console.log("\n[3/3] assigning employee codes …");
+  const allPeople = await db.select({ id: people.id, fullName: people.fullName, employeeCode: people.employeeCode })
+    .from(people)
+    .orderBy(asc(people.createdAt));
+
+  for (const p of allPeople) {
+    if (p.employeeCode) { result.employeeCodesAlreadyOk++; continue; }
+    // Re-derive the next code per iteration so concurrent inserts in a
+    // multi-runner deploy don't collide on the same sequential number.
+    const code = await nextEmployeeCode();
+    try {
+      await db.update(people).set({ employeeCode: code }).where(eq(people.id, p.id));
+      result.employeeCodesAssigned++;
+      result.employeeCodeAssignments.push({ personId: p.id, name: p.fullName, code });
+      console.log(`  ${p.id} (${p.fullName}) → ${code}`);
+    } catch (err) {
+      // UNIQUE violation: another runner grabbed this code in the gap
+      // between nextEmployeeCode and update. Skip — the next pass picks
+      // up this row again.
+      console.warn(`  skip ${p.id} (${p.fullName}): could not assign ${code} (${(err as Error).message})`);
+      result.skipped.push({ personId: p.id, name: p.fullName, reason: `employee code collision on ${code}` });
+    }
+  }
+  console.log(`  done. assigned=${result.employeeCodesAssigned} alreadyOk=${result.employeeCodesAlreadyOk}`);
+
   return result;
 }
 

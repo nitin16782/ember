@@ -221,6 +221,9 @@ export default function People() {
                     <div>
                       <p className="font-medium text-sm">{person.fullName}</p>
                       <div className="flex items-center gap-3 mt-1">
+                        {person.employeeCode && (
+                          <span className="text-xs font-mono text-muted-foreground">{person.employeeCode}</span>
+                        )}
                         {person.designation && (
                           <span className="text-xs text-muted-foreground">{person.designation}</span>
                         )}
