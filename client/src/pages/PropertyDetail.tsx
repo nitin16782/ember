@@ -131,7 +131,9 @@ const SHIFT_OPTIONS: { value: "morning" | "evening" | "full_day" | "night" | "24
 function StaffTab({ propertyId, propertyName }: { propertyId: string; propertyName: string }) {
   const [open, setOpen] = useState(false);
   const { data: rows, isLoading } = trpc.assignments.list.useQuery({ propertyId, status: "active" });
-  const { data: peopleRows } = trpc.people.list.useQuery({});
+  // server-side listPeople defaults to limit=50; raise it so personId → person
+  // resolution on the property staff tab covers the full active workforce.
+  const { data: peopleRows } = trpc.people.list.useQuery({ limit: 500 });
 
   const personById = useMemo(() => {
     const m = new Map<string, { fullName: string; designation?: string | null; primaryPhone?: string | null; employeeCode?: string | null }>();
