@@ -358,8 +358,13 @@ export default function AttendanceOverview() {
                       </Td>
                       <Td>
                         {r.anomalyCodes.length > 0 ? (
-                          <span className="text-xs text-yellow-900">
-                            {r.anomalyCodes.length}
+                          <span
+                            className="text-xs text-yellow-900 cursor-help"
+                            title={r.anomalyCodes.join(", ")}
+                          >
+                            {r.anomalyCodes
+                              .map((c: string) => c.replace(/_/g, " "))
+                              .join(", ")}
                           </span>
                         ) : (
                           ""
