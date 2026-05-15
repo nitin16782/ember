@@ -131,6 +131,11 @@ export type Entity = typeof entities.$inferSelect;
 export const people = mysqlTable("people", {
   id: uuidPk(),
   userId: fk("userId").references(() => users.id),
+  // Sequential, human-readable login ID (e.g. "EMP-0042").
+  // Nullable so historical rows survive the schema migration; the
+  // backfill assigns one to every existing person and createPerson
+  // assigns one to every new row.
+  employeeCode: varchar("employeeCode", { length: 16 }).unique(),
   fullName: varchar("fullName", { length: 255 }).notNull(),
   photoUrl: varchar("photoUrl", { length: 512 }),
   dob: date("dob"),

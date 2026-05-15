@@ -2,12 +2,12 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { eq, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
+import { router, publicProcedure, protectedProcedure, rolesProcedure } from "../_core/trpc";
 import type { Context } from "../_core/context";
 import { getDb } from "../db";
-import { users, authCredentials, type User } from "../../drizzle/schema";
+import { users, authCredentials, people, type User } from "../../drizzle/schema";
 import {
-  hashPassword, verifyPassword, validatePasswordStrength,
+  hashPassword, verifyPassword, validatePasswordStrength, validatePin,
   issueTokens, rotateRefreshToken, revokeRefreshToken, revokeAllUserTokens,
   generateOtp, verifyOtp, generateMagicLink, consumeMagicLink,
   recordFailedLogin, clearFailedLogins, isAccountLocked,
@@ -347,5 +347,168 @@ export const authRouter = router({
       });
 
       return { ok: true };
+    }),
+
+  /**
+   * Associate login: employee code + 6-digit PIN.
+   *
+   * Path chosen over phone OTP because (a) many properties have poor
+   * cellular signal and (b) housekeepers often share devices, so the
+   * OTP never reaches the right person. Employee code + PIN is fully
+   * offline, doesn't depend on phone-number ownership, and pins are
+   * cheap to type on a numeric keypad.
+   */
+  loginWithEmployeeCode: publicProcedure
+    .input(z.object({
+      code: z.string().min(1),
+      pin: z.string().min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const normalized = input.code.trim().toUpperCase();
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [person] = await db.select().from(people)
+        .where(eq(people.employeeCode, normalized)).limit(1);
+      // Same generic error for all failure modes — don't leak whether
+      // the employee code exists.
+      const fail = () => new TRPCError({ code: "UNAUTHORIZED", message: "Invalid employee ID or PIN" });
+      if (!person || !person.userId) throw fail();
+
+      const [user] = await db.select().from(users)
+        .where(eq(users.id, person.userId)).limit(1);
+      if (!user || !user.isActive) throw fail();
+
+      if (await isAccountLocked(user.id)) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Account locked. Try again in 15 minutes." });
+      }
+
+      const [cred] = await db.select().from(authCredentials)
+        .where(eq(authCredentials.userId, user.id)).limit(1);
+      if (!cred) {
+        // No PIN set yet — surface a distinct message so the operator
+        // knows to set one via the admin "Set PIN" button rather than
+        // sending the user round in circles.
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "PIN not set yet. Ask your supervisor to set a PIN for you.",
+        });
+      }
+
+      const ok = await verifyPassword(input.pin, cred.passwordHash);
+      if (!ok) {
+        const { locked } = await recordFailedLogin(user.id);
+        if (locked) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Account locked. Try again in 15 minutes." });
+        throw fail();
+      }
+
+      await clearFailedLogins(user.id);
+      const tokens = await issueTokens(user, clientCtx(ctx));
+      return {
+        user: sanitizeUser(user),
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt.toISOString(),
+        mustChangePin: cred.mustChangePassword,
+      };
+    }),
+
+  /**
+   * Admin-only: set or reset an associate's PIN. Forces a change on
+   * next login — admin picks a temporary PIN, the associate replaces
+   * it the first time they sign in.
+   */
+  setAssociatePin: rolesProcedure("super_admin", "central_admin", "ops_lead")
+    .input(z.object({
+      personId: z.string().uuid(),
+      pin: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const strength = validatePin(input.pin);
+      if (!strength.ok) throw new TRPCError({ code: "BAD_REQUEST", message: strength.reason });
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [person] = await db.select().from(people)
+        .where(eq(people.id, input.personId)).limit(1);
+      if (!person) throw new TRPCError({ code: "NOT_FOUND", message: "Associate not found" });
+      if (!person.userId) throw new TRPCError({ code: "BAD_REQUEST", message: "Associate has no user account; run the backfill first." });
+
+      const passwordHash = await hashPassword(input.pin);
+      const [existing] = await db.select().from(authCredentials)
+        .where(eq(authCredentials.userId, person.userId)).limit(1);
+
+      if (existing) {
+        await db.update(authCredentials)
+          .set({
+            passwordHash,
+            passwordSetAt: new Date(),
+            mustChangePassword: true,
+            failedAttempts: 0,
+            lockedUntil: null,
+          })
+          .where(eq(authCredentials.userId, person.userId));
+      } else {
+        await db.insert(authCredentials).values({
+          id: randomUUID(),
+          userId: person.userId,
+          passwordHash,
+          mustChangePassword: true,
+        });
+      }
+
+      // Force any existing sessions to re-auth with the new PIN.
+      await revokeAllUserTokens(person.userId);
+      return { ok: true };
+    }),
+
+  /**
+   * Change one's own PIN (used by the force-change-on-first-login
+   * flow and by associates who want to pick a new one). Same shape
+   * as changePassword but with PIN validation rules.
+   */
+  changeAssociatePin: protectedProcedure
+    .input(z.object({
+      currentPin: z.string().min(1),
+      newPin: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const strength = validatePin(input.newPin);
+      if (!strength.ok) throw new TRPCError({ code: "BAD_REQUEST", message: strength.reason });
+      if (input.currentPin === input.newPin) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "New PIN must differ from current PIN" });
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [cred] = await db.select().from(authCredentials)
+        .where(eq(authCredentials.userId, ctx.user.id)).limit(1);
+      if (!cred) throw new TRPCError({ code: "BAD_REQUEST", message: "PIN not set; ask your supervisor to set one" });
+
+      const ok = await verifyPassword(input.currentPin, cred.passwordHash);
+      if (!ok) throw new TRPCError({ code: "UNAUTHORIZED", message: "Current PIN incorrect" });
+
+      const newHash = await hashPassword(input.newPin);
+      await db.update(authCredentials)
+        .set({
+          passwordHash: newHash,
+          passwordSetAt: new Date(),
+          mustChangePassword: false,
+          failedAttempts: 0,
+          lockedUntil: null,
+        })
+        .where(eq(authCredentials.userId, ctx.user.id));
+
+      await revokeAllUserTokens(ctx.user.id);
+      const tokens = await issueTokens(ctx.user, clientCtx(ctx));
+      return {
+        ok: true,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt.toISOString(),
+      };
     }),
 });

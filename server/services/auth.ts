@@ -162,6 +162,25 @@ export function validatePasswordStrength(password: string): { ok: true } | { ok:
   return { ok: true };
 }
 
+// Associates sign in with a 6-digit numeric PIN — chosen over an
+// alphanumeric password because many housekeepers work from shared
+// devices on cheap keypads where typing accuracy is the bottleneck.
+// Reject trivial sequences and repeats so the convenience doesn't
+// turn into "everyone picks 000000".
+const PIN_LENGTH = 6;
+const TRIVIAL_PINS = new Set([
+  "000000", "111111", "222222", "333333", "444444", "555555",
+  "666666", "777777", "888888", "999999",
+  "012345", "123456", "234567", "345678", "456789", "567890",
+  "098765", "987654", "876543", "765432", "654321", "543210",
+]);
+export function validatePin(pin: string): { ok: true } | { ok: false; reason: string } {
+  if (pin.length !== PIN_LENGTH) return { ok: false, reason: `PIN must be exactly ${PIN_LENGTH} digits` };
+  if (!/^\d+$/.test(pin)) return { ok: false, reason: "PIN must be digits only" };
+  if (TRIVIAL_PINS.has(pin)) return { ok: false, reason: "Choose a less guessable PIN" };
+  return { ok: true };
+}
+
 // ─── OTP helpers ────────────────────────────────────────────────────
 
 const OTP_EXPIRY_MIN = 10;

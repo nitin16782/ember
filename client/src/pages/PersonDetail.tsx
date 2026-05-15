@@ -4,9 +4,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, Briefcase, CreditCard, ClipboardCheck, FileText, History, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, Briefcase, CreditCard, ClipboardCheck, FileText, History, CheckCircle2, Clock, AlertTriangle, KeyRound } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useState } from "react";
+import { useAuth, type Role } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 function formatField(val: unknown): string {
   if (val === null || val === undefined) return "—";
@@ -14,10 +20,14 @@ function formatField(val: unknown): string {
   return String(val);
 }
 
+const PIN_ADMIN_ROLES: Role[] = ["super_admin", "central_admin", "ops_lead"];
+
 export default function PersonDetail() {
   const params = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const id = params.id ?? "";
+  const { user: currentUser } = useAuth();
+  const canSetPin = currentUser ? PIN_ADMIN_ROLES.includes(currentUser.role) : false;
   const { data: person, isLoading } = trpc.people.get.useQuery({ id }, { enabled: !!id });
   const { data: onboardingItems } = trpc.onboarding.list.useQuery({ personId: id }, { enabled: !!id });
   const { data: contracts } = trpc.contracts.list.useQuery({ personId: id }, { enabled: !!id });
@@ -65,7 +75,12 @@ export default function PersonDetail() {
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="font-display text-xl font-semibold text-navy">{person.fullName}</h2>
-              <p className="text-sm text-muted-foreground mt-0.5">{person.designation || "No designation"}</p>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {person.employeeCode ? (
+                  <span className="font-mono mr-2">{person.employeeCode}</span>
+                ) : null}
+                {person.designation || "No designation"}
+              </p>
               <div className="flex flex-wrap items-center gap-2 mt-3">
                 <Badge className={person.employmentStatus === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}>
                   {person.employmentStatus?.replace("_", " ")}
@@ -73,6 +88,9 @@ export default function PersonDetail() {
                 <Badge variant="outline">{person.staffType?.replace("_", " ")}</Badge>
               </div>
             </div>
+            {canSetPin && person.staffType === "associate" && (
+              <SetPinButton personId={person.id} personName={person.fullName} />
+            )}
           </div>
         </CardContent>
       </Card>
@@ -265,5 +283,74 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ComponentType<{ cla
         <p className="text-sm truncate">{value}</p>
       </div>
     </div>
+  );
+}
+
+function SetPinButton({ personId, personName }: { personId: string; personName: string }) {
+  const [open, setOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const setPinMut = trpc.auth.setAssociatePin.useMutation();
+
+  const valid = /^\d{6}$/.test(pin) && pin === confirm;
+
+  async function submit() {
+    setError(null);
+    if (!/^\d{6}$/.test(pin)) { setError("PIN must be 6 digits"); return; }
+    if (pin !== confirm) { setError("PINs don't match"); return; }
+    try {
+      await setPinMut.mutateAsync({ personId, pin });
+      toast.success(`PIN set for ${personName}. They'll be asked to change it on first sign-in.`);
+      setOpen(false);
+      setPin(""); setConfirm("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not set PIN");
+    }
+  }
+
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="gap-2 shrink-0">
+        <KeyRound className="h-4 w-4" /> Set PIN
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set PIN for {personName}</DialogTitle>
+            <DialogDescription>
+              The associate will be asked to choose a new PIN the first time they sign in.
+              Share this PIN with them privately.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="newPin">Temporary PIN (6 digits)</Label>
+              <Input
+                id="newPin" type="text" inputMode="numeric" maxLength={6} pattern="\d{6}"
+                value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                className="text-center text-2xl tracking-[0.4em] font-['Consolas',monospace]"
+                autoFocus
+              />
+            </div>
+            <div>
+              <Label htmlFor="confirmPin">Confirm</Label>
+              <Input
+                id="confirmPin" type="text" inputMode="numeric" maxLength={6} pattern="\d{6}"
+                value={confirm} onChange={(e) => setConfirm(e.target.value.replace(/\D/g, ""))}
+                className="text-center text-2xl tracking-[0.4em] font-['Consolas',monospace]"
+              />
+            </div>
+            {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={submit} disabled={!valid || setPinMut.isPending} className="bg-[#1A3A5C] hover:bg-[#15304d]">
+              {setPinMut.isPending ? "Saving…" : "Set PIN"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
