@@ -132,7 +132,7 @@ export interface AssociateStrings {
   markUploading: string;
   markRecording: string;
   markDone: string;
-  markUploadFailed: (stage: string) => string;
+  markUploadFailed: (stage: string, detail: string) => string;
   markQueuedOffline: string;
   markEventError: string;
   markConfirm: (label: string) => string;
@@ -247,7 +247,7 @@ const en: AssociateStrings = {
   markUploading: "Uploading photo…",
   markRecording: "Recording event…",
   markDone: "Done",
-  markUploadFailed: (stage) => `Selfie upload failed (${stage}). You can retry.`,
+  markUploadFailed: (stage, detail) => `Selfie upload failed (${stage}): ${detail}. You can retry.`,
   markQueuedOffline: "Saved locally — will retry when network returns.",
   markEventError: "Could not record event",
   markConfirm: (label) => `Confirm ${label.toLowerCase()}`,
@@ -362,7 +362,7 @@ const hi: AssociateStrings = {
   markUploading: "फोटो अपलोड हो रहा है…",
   markRecording: "इवेंट रिकॉर्ड हो रहा है…",
   markDone: "हो गया",
-  markUploadFailed: (stage) => `सेल्फी अपलोड विफल (${stage})। आप फिर कोशिश कर सकते हैं।`,
+  markUploadFailed: (stage, detail) => `सेल्फी अपलोड विफल (${stage}): ${detail}। आप फिर कोशिश कर सकते हैं।`,
   markQueuedOffline: "स्थानीय रूप से सहेजा गया — नेटवर्क आने पर फिर भेजा जाएगा।",
   markEventError: "इवेंट रिकॉर्ड नहीं हो सका",
   markConfirm: (label) => `${label} पुष्टि करें`,
@@ -477,7 +477,7 @@ const mr: AssociateStrings = {
   markUploading: "फोटो अपलोड होत आहे…",
   markRecording: "इव्हेंट नोंदवत आहे…",
   markDone: "झाले",
-  markUploadFailed: (stage) => `सेल्फी अपलोड अयशस्वी (${stage}). पुन्हा प्रयत्न करू शकता.`,
+  markUploadFailed: (stage, detail) => `सेल्फी अपलोड अयशस्वी (${stage}): ${detail}. पुन्हा प्रयत्न करू शकता.`,
   markQueuedOffline: "स्थानिक पातळीवर जतन — नेटवर्क आल्यावर पुन्हा पाठवले जाईल.",
   markEventError: "इव्हेंट नोंदवता आला नाही",
   markConfirm: (label) => `${label} ची पुष्टी करा`,
@@ -592,7 +592,7 @@ const bn: AssociateStrings = {
   markUploading: "ছবি আপলোড হচ্ছে…",
   markRecording: "ইভেন্ট রেকর্ড হচ্ছে…",
   markDone: "হয়ে গেছে",
-  markUploadFailed: (stage) => `সেলফি আপলোড ব্যর্থ (${stage})। আপনি আবার চেষ্টা করতে পারেন।`,
+  markUploadFailed: (stage, detail) => `সেলফি আপলোড ব্যর্থ (${stage}): ${detail}। আপনি আবার চেষ্টা করতে পারেন।`,
   markQueuedOffline: "স্থানীয়ভাবে সংরক্ষিত — নেটওয়ার্ক ফিরলে আবার পাঠানো হবে।",
   markEventError: "ইভেন্ট রেকর্ড করা যায়নি",
   markConfirm: (label) => `${label} নিশ্চিত করুন`,
@@ -707,7 +707,7 @@ const ta: AssociateStrings = {
   markUploading: "புகைப்படம் பதிவேற்றப்படுகிறது…",
   markRecording: "நிகழ்வு பதிவாகிறது…",
   markDone: "முடிந்தது",
-  markUploadFailed: (stage) => `செல்ஃபி பதிவேற்றம் தோல்வி (${stage}). மீண்டும் முயற்சிக்கலாம்.`,
+  markUploadFailed: (stage, detail) => `செல்ஃபி பதிவேற்றம் தோல்வி (${stage}): ${detail}. மீண்டும் முயற்சிக்கலாம்.`,
   markQueuedOffline: "உள்ளூரில் சேமிக்கப்பட்டது — இணைப்பு திரும்பியதும் மீண்டும் அனுப்பப்படும்.",
   markEventError: "நிகழ்வைப் பதிவு செய்ய முடியவில்லை",
   markConfirm: (label) => `${label} ஐ உறுதி செய்யவும்`,
@@ -822,7 +822,7 @@ const te: AssociateStrings = {
   markUploading: "ఫోటో అప్‌లోడ్ అవుతోంది…",
   markRecording: "ఈవెంట్ నమోదు అవుతోంది…",
   markDone: "పూర్తయింది",
-  markUploadFailed: (stage) => `సెల్ఫీ అప్‌లోడ్ విఫలం (${stage}). మళ్ళీ ప్రయత్నించవచ్చు.`,
+  markUploadFailed: (stage, detail) => `సెల్ఫీ అప్‌లోడ్ విఫలం (${stage}): ${detail}. మళ్ళీ ప్రయత్నించవచ్చు.`,
   markQueuedOffline: "స్థానికంగా సేవ్ చేయబడింది — నెట్‌వర్క్ తిరిగి వచ్చినప్పుడు మళ్ళీ పంపబడుతుంది.",
   markEventError: "ఈవెంట్ రికార్డ్ చేయలేకపోయాం",
   markConfirm: (label) => `${label} నిర్ధారించండి`,

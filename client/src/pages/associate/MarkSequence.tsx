@@ -174,7 +174,10 @@ export function MarkSequence({
       selfieKey = result.key;
     } catch (e) {
       const stage = e instanceof SelfieUploadError ? e.stage : "unknown";
-      setSubmitError(t.markUploadFailed(stage));
+      const detail = e instanceof Error ? e.message : "see console";
+      setSubmitError(t.markUploadFailed(stage, detail));
+      // eslint-disable-next-line no-console
+      console.error("[markSequence] selfie upload error:", e);
       setStage("error");
       return;
     }
