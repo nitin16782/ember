@@ -16,7 +16,7 @@
  */
 
 import "dotenv/config";
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomUUID, randomBytes, randomInt } from "node:crypto";
 import { readFileSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import bcrypt from "bcryptjs";
@@ -106,6 +106,13 @@ function excelSerialToDateStr(v: unknown): string | null {
 
 function generatePassword(): string {
   return randomBytes(12).toString("base64").replace(/[+/=]/g, "A").slice(0, 16);
+}
+
+// Associate login UI restricts input to `\d{6}` (numeric, exactly 6 chars),
+// so associates need a 6-digit PIN — not the 16-char alphanumeric password
+// used for staff. Leading zeros are preserved in the string form.
+function generatePin(): string {
+  return randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 
 // `people.primaryPhone` is varchar(20). A `LIKE 'INVALID-%'` query identifies
@@ -782,7 +789,9 @@ async function seedAssociates(
     }
     const emergencyContact = ecName || ecPhone ? { name: ecName, phone: ecPhone } : null;
 
-    const password = generatePassword();
+    // Associates authenticate via the AssociateLogin UI, which only accepts
+    // 6-digit numeric PINs — use `generatePin()`, not `generatePassword()`.
+    const password = generatePin();
     const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
 
     drafts.push({
@@ -1034,7 +1043,7 @@ function writeCsvs(): void {
   );
   writeFileSync(
     ASSOC_CSV,
-    csvLine(["employee_code", "full_name", "property", "designation", "system_role", "initial_password"]) +
+    csvLine(["employee_code", "full_name", "property", "designation", "system_role", "initial_pin"]) +
       associateCsvRows.map(csvLine).join(""),
   );
 }
