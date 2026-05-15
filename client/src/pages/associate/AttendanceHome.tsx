@@ -7,7 +7,6 @@ import {
   resolveShiftActions,
   formatTime,
   formatDuration,
-  statusBadgeText,
   type CurrentState,
 } from "./lib/shiftActions";
 import {
@@ -17,10 +16,43 @@ import {
   type QueuedMark,
   type ShiftEventType,
 } from "./lib/offlineQueue";
+import { useAssociateLocale, type AssociateStrings } from "@/lib/i18n/associate";
 
 const MAX_RETRY_ATTEMPTS = 5;
 
+function localizedEventTypeLabel(t: AssociateStrings, eventType: ShiftEventType): string {
+  switch (eventType) {
+    case "check_in": return t.eventCheckIn;
+    case "check_out": return t.eventCheckOut;
+    case "break_start": return t.eventBreakStart;
+    case "break_end": return t.eventBreakEnd;
+  }
+}
+
+function localizedActionLabel(t: AssociateStrings, eventType: ShiftEventType): string {
+  switch (eventType) {
+    case "check_in": return t.actionStartShift;
+    case "check_out": return t.actionEndShift;
+    case "break_start": return t.actionStartBreak;
+    case "break_end": return t.actionEndBreak;
+  }
+}
+
+function localizedStatusBadge(
+  t: AssociateStrings,
+  state: CurrentState,
+  lastEventAt: string | null
+): string {
+  const time = lastEventAt ? formatTime(lastEventAt) : null;
+  switch (state) {
+    case "off": return t.homeReadyToStart;
+    case "on_shift": return time ? t.homeOnShiftSince(time) : t.homeOnShift;
+    case "on_break": return time ? t.homeOnBreakSince(time) : t.homeOnBreak;
+  }
+}
+
 export default function AttendanceHome() {
+  const { locale, t } = useAssociateLocale();
   const myStatus = trpc.attendance.myStatus.useQuery();
   const recentEvents = trpc.attendance.recentEvents.useQuery({ limit: 20 });
   const utils = trpc.useUtils();
@@ -116,16 +148,20 @@ export default function AttendanceHome() {
   if (myStatus.isError || !status) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-        Could not load your status.{" "}
+        {t.homeLoadError}{" "}
         <button onClick={() => myStatus.refetch()} className="underline font-medium">
-          Retry
+          {t.homeRetry}
         </button>
       </div>
     );
   }
 
   const firstName = status.personName?.split(" ")[0] ?? "there";
-  const today = new Date().toLocaleDateString("en-IN", {
+  // Use the active locale for date formatting so day names match.
+  const localeTag = ({
+    en: "en-IN", hi: "hi-IN", mr: "mr-IN", bn: "bn-IN", ta: "ta-IN", te: "te-IN",
+  } as const)[locale];
+  const today = new Date().toLocaleDateString(localeTag, {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -141,18 +177,17 @@ export default function AttendanceHome() {
         <div className="rounded-lg border border-[#7A5C0F] bg-[#F7F3EE] p-3 text-sm text-[#7A5C0F] flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 flex-shrink-0" />
           <span>
-            {pendingQueue.length} pending mark{pendingQueue.length === 1 ? "" : "s"}
-            {stuckQueueIds.length > 0
-              ? " — some need supervisor attention"
-              : " — syncing..."}
+            {t.homePendingMarks(pendingQueue.length)}
+            {" — "}
+            {stuckQueueIds.length > 0 ? t.homePendingNeedsSupervisor : t.homePendingSyncing}
           </span>
         </div>
       )}
 
       <header>
-        <h1 className="font-['Georgia',serif] text-2xl text-[#1A3A5C]">Hi, {firstName}</h1>
+        <h1 className="font-['Georgia',serif] text-2xl text-[#1A3A5C]">{t.homeGreeting(firstName)}</h1>
         <p className="text-sm text-[#5C5C5C] mt-0.5">
-          {status.propertyName ?? "No property assigned"}
+          {status.propertyName ?? t.homeNoProperty}
         </p>
         <p className="text-xs text-[#5C5C5C]">{today}</p>
       </header>
@@ -169,19 +204,19 @@ export default function AttendanceHome() {
               : "bg-[#F7F3EE] border-[#D9D2C2]")
         }
       >
-        <div className="text-xs uppercase tracking-wider text-[#5C5C5C] mb-1">Current state</div>
+        <div className="text-xs uppercase tracking-wider text-[#5C5C5C] mb-1">{t.homeCurrentState}</div>
         <div className="font-['Georgia',serif] text-xl text-[#1A3A5C]">
-          {statusBadgeText(currentState, status.lastEventAt)}
+          {localizedStatusBadge(t, currentState, status.lastEventAt)}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
           <div>
-            <div className="text-xs uppercase tracking-wider text-[#5C5C5C]">Work</div>
+            <div className="text-xs uppercase tracking-wider text-[#5C5C5C]">{t.homeWorkLabel}</div>
             <div className="text-[#1A1A1A] font-medium">
               {formatDuration(status.todayMinutesWorked)}
             </div>
           </div>
           <div>
-            <div className="text-xs uppercase tracking-wider text-[#5C5C5C]">Break</div>
+            <div className="text-xs uppercase tracking-wider text-[#5C5C5C]">{t.homeBreakLabel}</div>
             <div className="text-[#1A1A1A] font-medium">
               {formatDuration(status.todayBreakMinutes)}
             </div>
@@ -191,31 +226,37 @@ export default function AttendanceHome() {
 
       {noProperty && (
         <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3 text-sm text-red-800">
-          No property assigned. Contact your supervisor before marking attendance.
+          {t.homeNoPropertyWarning}
         </div>
       )}
 
       {actions && actions.primary && status.propertyId ? (
         <button
           onClick={() =>
-            setMarkingType({ eventType: actions.primary!.eventType, label: actions.primary!.label })
+            setMarkingType({
+              eventType: actions.primary!.eventType,
+              label: localizedActionLabel(t, actions.primary!.eventType),
+            })
           }
           disabled={!actions.primary.enabled}
           className="w-full min-h-[64px] rounded-lg bg-[#1A3A5C] text-white font-medium text-base disabled:opacity-50"
         >
-          {actions.primary.label}
+          {localizedActionLabel(t, actions.primary.eventType)}
         </button>
       ) : null}
 
       {actions && actions.secondary && status.propertyId ? (
         <button
           onClick={() =>
-            setMarkingType({ eventType: actions.secondary!.eventType, label: actions.secondary!.label })
+            setMarkingType({
+              eventType: actions.secondary!.eventType,
+              label: localizedActionLabel(t, actions.secondary!.eventType),
+            })
           }
           disabled={!actions.secondary.enabled}
           className="w-full min-h-[56px] rounded-lg border-2 border-[#1A3A5C] bg-white text-[#1A3A5C] font-medium disabled:opacity-50"
         >
-          {actions.secondary.label}
+          {localizedActionLabel(t, actions.secondary.eventType)}
         </button>
       ) : null}
 
@@ -225,7 +266,7 @@ export default function AttendanceHome() {
           className="w-full px-4 py-3 flex items-center justify-between min-h-[44px]"
           aria-expanded={historyOpen}
         >
-          <span className="text-sm font-medium text-[#1A3A5C]">Today's marks</span>
+          <span className="text-sm font-medium text-[#1A3A5C]">{t.homeTodaysMarks}</span>
           {historyOpen ? (
             <ChevronUp className="h-4 w-4 text-[#5C5C5C]" />
           ) : (
@@ -237,6 +278,7 @@ export default function AttendanceHome() {
             <RecentEventList
               events={recentEvents.data?.events ?? []}
               loading={recentEvents.isLoading}
+              t={t}
             />
           </div>
         )}
@@ -259,6 +301,7 @@ export default function AttendanceHome() {
 function RecentEventList({
   events,
   loading,
+  t,
 }: {
   events: Array<{
     id: string;
@@ -268,9 +311,10 @@ function RecentEventList({
     markedByOnBehalf: boolean;
   }>;
   loading: boolean;
+  t: AssociateStrings;
 }) {
-  if (loading) return <div className="text-xs text-[#5C5C5C] py-2">Loading...</div>;
-  if (events.length === 0) return <div className="text-xs text-[#5C5C5C] py-2">No marks yet today.</div>;
+  if (loading) return <div className="text-xs text-[#5C5C5C] py-2">{t.loading}</div>;
+  if (events.length === 0) return <div className="text-xs text-[#5C5C5C] py-2">{t.homeNoMarksToday}</div>;
   return (
     <ul className="space-y-1">
       {events.map((e) => (
@@ -281,12 +325,12 @@ function RecentEventList({
           <span className="text-[#5C5C5C] tabular-nums w-12 flex-shrink-0">
             {formatTime(e.eventAt)}
           </span>
-          <span className="flex-1 text-[#1A1A1A]">{eventLabel(e.eventType)}</span>
+          <span className="flex-1 text-[#1A1A1A]">{localizedEventTypeLabel(t, e.eventType)}</span>
           {e.edited ? (
-            <span className="text-[10px] uppercase text-[#7A5C0F] font-medium">edited</span>
+            <span className="text-[10px] uppercase text-[#7A5C0F] font-medium">{t.homeBadgeEdited}</span>
           ) : null}
           {e.markedByOnBehalf ? (
-            <span className="text-[10px] uppercase text-[#7A5C0F] font-medium">supervisor</span>
+            <span className="text-[10px] uppercase text-[#7A5C0F] font-medium">{t.homeBadgeOnBehalf}</span>
           ) : null}
           <Edit3 className="h-3 w-3 text-[#5C5C5C] opacity-50" aria-hidden />
         </li>
@@ -295,15 +339,3 @@ function RecentEventList({
   );
 }
 
-function eventLabel(t: ShiftEventType): string {
-  switch (t) {
-    case "check_in":
-      return "Check in";
-    case "check_out":
-      return "Check out";
-    case "break_start":
-      return "Break start";
-    case "break_end":
-      return "Break end";
-  }
-}

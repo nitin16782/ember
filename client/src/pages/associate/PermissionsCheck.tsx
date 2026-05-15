@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Camera, MapPin, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useAssociateLocale } from "@/lib/i18n/associate";
 
 type Status = "unknown" | "granted" | "denied" | "prompt";
 
@@ -44,6 +45,7 @@ function requestGeolocation(): Promise<boolean> {
 }
 
 export function PermissionsCheck({ onAllGranted }: PermissionsCheckProps) {
+  const { t } = useAssociateLocale();
   const [camera, setCamera] = useState<Status>("unknown");
   const [geo, setGeo] = useState<Status>("unknown");
   const [requesting, setRequesting] = useState(false);
@@ -80,25 +82,21 @@ export function PermissionsCheck({ onAllGranted }: PermissionsCheckProps) {
 
   return (
     <div className="rounded-lg border border-[#D9D2C2] bg-white p-4 mb-4">
-      <h3 className="font-['Georgia',serif] text-lg text-[#1A3A5C] mb-2">Quick setup</h3>
-      <p className="text-sm text-[#5C5C5C] mb-4">
-        Two permissions let you mark attendance quickly:
-      </p>
+      <h3 className="font-['Georgia',serif] text-lg text-[#1A3A5C] mb-2">{t.permsTitle}</h3>
+      <p className="text-sm text-[#5C5C5C] mb-4">{t.permsLead}</p>
       <ul className="space-y-2 mb-4">
-        <PermissionRow icon={Camera} label="Camera" status={camera} reason="For the selfie that confirms it's you" />
-        <PermissionRow icon={MapPin} label="Location" status={geo} reason="So your supervisor knows you're at the property" />
+        <PermissionRow icon={Camera} label={t.permsCameraLabel} status={camera} reason={t.permsCameraReason} />
+        <PermissionRow icon={MapPin} label={t.permsLocationLabel} status={geo} reason={t.permsLocationReason} />
       </ul>
       {(camera === "denied" || geo === "denied") && (
-        <p className="text-xs text-[#7A5C0F] mb-3">
-          If you blocked these before, open Settings → Site Settings to re-enable.
-        </p>
+        <p className="text-xs text-[#7A5C0F] mb-3">{t.permsDeniedHint}</p>
       )}
       <button
         onClick={grantAccess}
         disabled={requesting}
         className="w-full min-h-[56px] rounded-lg bg-[#1A3A5C] text-white font-medium disabled:opacity-60"
       >
-        {requesting ? "Asking..." : "Grant access"}
+        {requesting ? t.permsRequesting : t.permsGrantButton}
       </button>
     </div>
   );
