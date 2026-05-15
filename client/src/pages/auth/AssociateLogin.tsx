@@ -49,10 +49,7 @@ export default function AssociateLogin() {
       title="Associate sign in"
       subtitle="Enter your employee ID and PIN"
       footer={
-        <div className="flex flex-col gap-1 text-center">
-          <Link href="/login/associate/otp" className="text-[#1A3A5C] hover:underline">Sign in with phone OTP instead</Link>
-          <Link href="/login" className="text-[#1A3A5C] hover:underline">Staff sign in</Link>
-        </div>
+        <Link href="/login" className="text-[#1A3A5C] hover:underline">Staff sign in</Link>
       }
     >
       <form onSubmit={submit} className="space-y-4">
