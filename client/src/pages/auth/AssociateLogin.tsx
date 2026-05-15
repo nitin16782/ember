@@ -6,10 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
+import { LanguagePicker } from "@/components/LanguagePicker";
+import { useAssociateLocale } from "@/lib/i18n/associate";
 
 export default function AssociateLogin() {
   const [, setLocation] = useLocation();
   const { loginWithEmployeeCode } = useAuth();
+  const { locale, setLocale, t } = useAssociateLocale();
   const [code, setCode] = useState("");
   const [pin, setPin] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -25,8 +28,8 @@ export default function AssociateLogin() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!codeOk) { setError("Enter your employee ID (e.g. EMP-0042)."); return; }
-    if (!pinOk) { setError("PIN must be 6 digits."); return; }
+    if (!codeOk) { setError(t.errorEmployeeId); return; }
+    if (!pinOk) { setError(t.errorPin); return; }
 
     setSubmitting(true);
     try {
@@ -40,21 +43,22 @@ export default function AssociateLogin() {
         setLocation("/associate/attendance");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not sign in");
+      setError(err instanceof Error ? err.message : t.errorGeneric);
     } finally { setSubmitting(false); }
   }
 
   return (
     <AuthLayout
-      title="Associate sign in"
-      subtitle="Enter your employee ID and PIN"
+      title={t.loginTitle}
+      subtitle={t.loginSubtitleEmpCode}
       footer={
-        <Link href="/login" className="text-[#1A3A5C] hover:underline">Staff sign in</Link>
+        <Link href="/login" className="text-[#1A3A5C] hover:underline">{t.staffSignInLink}</Link>
       }
     >
-      <form onSubmit={submit} className="space-y-4">
+      <LanguagePicker value={locale} onChange={setLocale} label={t.pickLanguage} />
+      <form onSubmit={submit} className="space-y-4" lang={locale}>
         <div>
-          <Label htmlFor="employeeCode">Employee ID</Label>
+          <Label htmlFor="employeeCode">{t.employeeIdLabel}</Label>
           <Input
             id="employeeCode"
             type="text"
@@ -66,12 +70,12 @@ export default function AssociateLogin() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             disabled={submitting}
-            placeholder="EMP-0042"
+            placeholder={t.employeeIdPlaceholder}
             className="text-lg"
           />
         </div>
         <div>
-          <Label htmlFor="pin">PIN</Label>
+          <Label htmlFor="pin">{t.pinLabel}</Label>
           <Input
             id="pin"
             type="password"
@@ -91,7 +95,7 @@ export default function AssociateLogin() {
           <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>
         )}
         <Button type="submit" disabled={submitting || !codeOk || !pinOk} className="w-full bg-[#1A3A5C] hover:bg-[#15304d] h-11">
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : t.signInButton}
         </Button>
       </form>
     </AuthLayout>

@@ -4,6 +4,7 @@ import { Camera, MapPin, X, RefreshCw, Loader2, CheckCircle2 } from "lucide-reac
 import { uploadSelfie, SelfieUploadError } from "./lib/uploadSelfie";
 import type { ShiftEventType } from "./lib/offlineQueue";
 import { queueMark } from "./lib/offlineQueue";
+import { useAssociateLocale, type AssociateStrings } from "@/lib/i18n/associate";
 
 export interface MarkSequenceProps {
   eventType: ShiftEventType;
@@ -33,6 +34,7 @@ export function MarkSequence({
   onSuccess,
   onQueued,
 }: MarkSequenceProps) {
+  const { t } = useAssociateLocale();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export function MarkSequence({
   const startCamera = useCallback(async () => {
     setCameraError(null);
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError("Camera not available on this device");
+      setCameraError(t.markCameraUnavailable);
       return;
     }
     try {
@@ -67,14 +69,14 @@ export function MarkSequence({
     } catch (e) {
       const err = e as Error;
       if (err.name === "NotAllowedError") {
-        setCameraError("Camera access denied. Open Settings → Site Settings → enable Camera, then retry.");
+        setCameraError(t.markCameraDenied);
       } else if (err.name === "NotFoundError") {
-        setCameraError("No front-facing camera found on this device.");
+        setCameraError(t.markCameraNotFound);
       } else {
-        setCameraError(err.message || "Could not start camera");
+        setCameraError(err.message || t.markCameraGenericError);
       }
     }
-  }, []);
+  }, [t]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -93,7 +95,7 @@ export function MarkSequence({
   // ─── Geolocation (parallel) ─────────────────────────────────────
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setGeo({ kind: "failed", reason: "Geolocation unavailable" });
+      setGeo({ kind: "failed", reason: t.markGeoUnavailable });
       return;
     }
     setGeo({ kind: "acquiring" });
@@ -109,11 +111,14 @@ export function MarkSequence({
       (err) => {
         setGeo({
           kind: "failed",
-          reason: err.code === err.PERMISSION_DENIED ? "Location permission denied" : "Location unavailable",
+          reason: err.code === err.PERMISSION_DENIED ? t.markGeoDenied : t.markGeoUnknown,
         });
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
     );
+    // The reason strings need to be live but we don't want to retry geolocation
+    // on every locale change; t is captured at mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ─── Snapshot ───────────────────────────────────────────────────
@@ -169,7 +174,7 @@ export function MarkSequence({
       selfieKey = result.key;
     } catch (e) {
       const stage = e instanceof SelfieUploadError ? e.stage : "unknown";
-      setSubmitError(`Selfie upload failed (${stage}). You can retry.`);
+      setSubmitError(t.markUploadFailed(stage));
       setStage("error");
       return;
     }
@@ -199,15 +204,15 @@ export function MarkSequence({
           selfieKey,
           ...coords,
         });
-        setSubmitError("Saved locally — will retry when network returns.");
+        setSubmitError(t.markQueuedOffline);
         setStage("error");
         onQueued?.();
         return;
       }
-      setSubmitError(err.message ?? "Could not record event");
+      setSubmitError(err.message ?? t.markEventError);
       setStage("error");
     }
-  }, [snapshot, personId, geo, eventType, getUploadUrl, confirmUpload, markEvent, onSuccess, onQueued]);
+  }, [snapshot, personId, geo, eventType, getUploadUrl, confirmUpload, markEvent, onSuccess, onQueued, t]);
 
   // ─── Render ─────────────────────────────────────────────────────
   return (
@@ -218,7 +223,7 @@ export function MarkSequence({
           <button
             onClick={onClose}
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-[#5C5C5C]"
-            aria-label="Cancel"
+            aria-label={t.markCancelAria}
           >
             <X className="h-6 w-6" />
           </button>
@@ -233,7 +238,7 @@ export function MarkSequence({
                 onClick={startCamera}
                 className="px-4 py-2 bg-white text-[#1A3A5C] rounded font-medium"
               >
-                Retry camera
+                {t.markRetryCamera}
               </button>
             </div>
           ) : snapshotPreview ? (
@@ -255,7 +260,7 @@ export function MarkSequence({
             className="w-full min-h-[56px] rounded-lg bg-[#1A3A5C] text-white font-medium flex items-center justify-center gap-2"
           >
             <Camera className="h-5 w-5" />
-            Capture
+            {t.markCapture}
           </button>
         ) : null}
 
@@ -266,13 +271,13 @@ export function MarkSequence({
             className="w-full min-h-[44px] rounded-lg border border-[#D9D2C2] bg-white text-[#1A3A5C] font-medium flex items-center justify-center gap-2 disabled:opacity-50"
           >
             <RefreshCw className="h-4 w-4" />
-            Retake
+            {t.markRetake}
           </button>
         ) : null}
 
         <section className="rounded-lg border border-[#D9D2C2] bg-white p-3 flex items-center gap-3">
           <MapPin className="h-5 w-5 text-[#1A3A5C] flex-shrink-0" />
-          <div className="flex-1 text-sm">{renderGeoText(geo)}</div>
+          <div className="flex-1 text-sm">{renderGeoText(geo, t)}</div>
           <div className="flex-shrink-0">{renderGeoDot(geo)}</div>
         </section>
 
@@ -280,7 +285,7 @@ export function MarkSequence({
           <div className="rounded-lg bg-white border border-[#D9D2C2] p-3">
             <div className="flex items-center gap-2 text-sm text-[#1A3A5C] mb-2">
               <Loader2 className="h-4 w-4 animate-spin" />
-              {stage === "uploading" ? "Uploading photo..." : "Recording event..."}
+              {stage === "uploading" ? t.markUploading : t.markRecording}
             </div>
             <div className="h-2 rounded-full bg-[#F7F3EE] overflow-hidden">
               <div
@@ -293,7 +298,7 @@ export function MarkSequence({
 
         {stage === "done" ? (
           <div className="rounded-lg bg-green-50 border border-green-200 p-3 flex items-center gap-2 text-green-800 text-sm">
-            <CheckCircle2 className="h-5 w-5" /> Done
+            <CheckCircle2 className="h-5 w-5" /> {t.markDone}
           </div>
         ) : null}
 
@@ -308,25 +313,25 @@ export function MarkSequence({
           disabled={!snapshot || stage === "uploading" || stage === "submitting" || stage === "done"}
           className="w-full min-h-[56px] rounded-lg bg-[#7A5C0F] text-white font-medium disabled:opacity-50"
         >
-          {stage === "error" ? "Retry" : `Confirm ${primaryLabel.toLowerCase()}`}
+          {stage === "error" ? t.retry : t.markConfirm(primaryLabel)}
         </button>
       </div>
     </div>
   );
 }
 
-function renderGeoText(geo: GeoState): string {
+function renderGeoText(geo: GeoState, t: AssociateStrings): string {
   switch (geo.kind) {
     case "idle":
-      return "Waiting for location...";
+      return t.markGeoIdle;
     case "acquiring":
-      return "Getting location...";
+      return t.markGeoAcquiring;
     case "acquired":
       return geo.accuracy <= 50
-        ? `Location ready (±${Math.round(geo.accuracy)}m)`
-        : `Location approximate (±${Math.round(geo.accuracy)}m)`;
+        ? t.markGeoReady(Math.round(geo.accuracy))
+        : t.markGeoApproximate(Math.round(geo.accuracy));
     case "failed":
-      return `${geo.reason} — will submit without coords`;
+      return t.markGeoFailedNoCoords(geo.reason);
   }
 }
 

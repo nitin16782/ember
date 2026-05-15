@@ -6,10 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
+import { LanguagePicker } from "@/components/LanguagePicker";
+import { useAssociateLocale } from "@/lib/i18n/associate";
 
 export default function AssociateOtpLogin() {
   const [, setLocation] = useLocation();
   const { requestOtp, loginWithOtp } = useAuth();
+  const { locale, setLocale, t } = useAssociateLocale();
   const [step, setStep] = useState<"phone" | "code">("phone");
   const [phone, setPhone] = useState("+91");
   const [code, setCode] = useState("");
@@ -26,7 +29,7 @@ export default function AssociateOtpLogin() {
     e.preventDefault();
     setError(null);
     if (!isPhoneValid) {
-      setError("Enter a 10-digit Indian mobile number (e.g. 9876543210 or +91 98765 43210).");
+      setError(t.errorPhone);
       return;
     }
     setSubmitting(true);
@@ -34,7 +37,7 @@ export default function AssociateOtpLogin() {
       await requestOtp(phone);
       setStep("code");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send code");
+      setError(err instanceof Error ? err.message : t.errorSendCode);
     } finally { setSubmitting(false); }
   }
 
@@ -45,42 +48,43 @@ export default function AssociateOtpLogin() {
       await loginWithOtp(phone, code);
       setLocation("/associate/attendance");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Incorrect code");
+      setError(err instanceof Error ? err.message : t.errorOtpCode);
     } finally { setSubmitting(false); }
   }
 
   return (
     <AuthLayout
-      title={step === "phone" ? "Associate sign in" : "Enter code"}
-      subtitle={step === "phone" ? "We'll send a code to your phone" : `Sent to ${phone}`}
+      title={step === "phone" ? t.loginTitle : t.enterCodeTitle}
+      subtitle={step === "phone" ? t.loginSubtitleOtpPhone : t.loginSubtitleOtpCode(phone)}
       footer={
         <div className="flex flex-col gap-1 text-center">
-          <Link href="/login/associate" className="text-[#1A3A5C] hover:underline">Use employee ID + PIN instead</Link>
-          <Link href="/login" className="text-[#1A3A5C] hover:underline">Staff sign in</Link>
+          <Link href="/login/associate" className="text-[#1A3A5C] hover:underline">{t.switchToEmpCodeLink}</Link>
+          <Link href="/login" className="text-[#1A3A5C] hover:underline">{t.staffSignInLink}</Link>
         </div>
       }
     >
+      <LanguagePicker value={locale} onChange={setLocale} label={t.pickLanguage} />
       {step === "phone" ? (
-        <form onSubmit={sendCode} className="space-y-4">
+        <form onSubmit={sendCode} className="space-y-4" lang={locale}>
           <div>
-            <Label htmlFor="phone">Phone number</Label>
+            <Label htmlFor="phone">{t.phoneLabel}</Label>
             <Input
               id="phone" type="tel" required autoFocus inputMode="tel" autoComplete="tel"
               value={phone} onChange={(e) => setPhone(e.target.value)}
-              disabled={submitting} placeholder="+91 98765 43210"
+              disabled={submitting} placeholder={t.phonePlaceholder}
             />
           </div>
           {error && (
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>
           )}
           <Button type="submit" disabled={submitting || !isPhoneValid} className="w-full bg-[#1A3A5C] hover:bg-[#15304d]">
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send code"}
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : t.sendCodeButton}
           </Button>
         </form>
       ) : (
-        <form onSubmit={verify} className="space-y-4">
+        <form onSubmit={verify} className="space-y-4" lang={locale}>
           <div>
-            <Label htmlFor="code">6-digit code</Label>
+            <Label htmlFor="code">{t.codeLabel}</Label>
             <Input
               id="code" type="text" required autoFocus inputMode="numeric" autoComplete="one-time-code"
               maxLength={6} pattern="\d{6}"
@@ -93,14 +97,14 @@ export default function AssociateOtpLogin() {
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>
           )}
           <Button type="submit" disabled={submitting || code.length !== 6} className="w-full bg-[#1A3A5C] hover:bg-[#15304d]">
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : t.signInButton}
           </Button>
           <button
             type="button"
             onClick={() => { setStep("phone"); setCode(""); setError(null); }}
             className="w-full text-sm text-[#1A3A5C] hover:underline"
           >
-            Use a different number
+            {t.useDifferentNumberLink}
           </button>
         </form>
       )}

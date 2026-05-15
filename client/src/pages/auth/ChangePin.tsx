@@ -6,10 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
+import { LanguagePicker } from "@/components/LanguagePicker";
+import { useAssociateLocale } from "@/lib/i18n/associate";
 
 export default function ChangePin() {
   const [, setLocation] = useLocation();
   const { user, changeAssociatePin } = useAuth();
+  const { locale, setLocale, t } = useAssociateLocale();
 
   const [currentPin, setCurrentPin] = useState("");
   const [newPin, setNewPin] = useState("");
@@ -25,34 +28,30 @@ export default function ChangePin() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!isNewValid) { setError("New PIN must be 6 digits."); return; }
-    if (!matches) { setError("PINs don't match."); return; }
-    if (!different) { setError("New PIN must differ from current PIN."); return; }
+    if (!isNewValid) { setError(t.changePinErrorNewLength); return; }
+    if (!matches) { setError(t.changePinErrorMismatch); return; }
+    if (!different) { setError(t.changePinErrorSame); return; }
 
     setSubmitting(true);
     try {
       await changeAssociatePin(currentPin, newPin);
       setLocation(user?.role === "associate" ? "/associate/attendance" : "/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not change PIN");
+      setError(err instanceof Error ? err.message : t.changePinErrorGeneric);
     } finally { setSubmitting(false); }
   }
 
   return (
-    <AuthLayout
-      title="Set a new PIN"
-      subtitle="Choose a 6-digit PIN only you know. You'll use this every time you sign in."
-    >
-      <form onSubmit={onSubmit} className="space-y-4">
-        <PinField id="currentPin" label="Current PIN (the one your supervisor gave you)" value={currentPin} onChange={setCurrentPin} disabled={submitting} autoFocus />
-        <PinField id="newPin" label="New PIN" value={newPin} onChange={setNewPin} disabled={submitting} />
-        <PinField id="confirmPin" label="Confirm new PIN" value={confirmPin} onChange={setConfirmPin} disabled={submitting} />
-        <p className="text-xs text-[#5C5C5C]">
-          Use 6 digits. Avoid easy guesses like 123456 or your year of birth.
-        </p>
+    <AuthLayout title={t.changePinTitle} subtitle={t.changePinSubtitle}>
+      <LanguagePicker value={locale} onChange={setLocale} label={t.pickLanguage} />
+      <form onSubmit={onSubmit} className="space-y-4" lang={locale}>
+        <PinField id="currentPin" label={t.changePinCurrentLabel} value={currentPin} onChange={setCurrentPin} disabled={submitting} autoFocus />
+        <PinField id="newPin" label={t.changePinNewLabel} value={newPin} onChange={setNewPin} disabled={submitting} />
+        <PinField id="confirmPin" label={t.changePinConfirmLabel} value={confirmPin} onChange={setConfirmPin} disabled={submitting} />
+        <p className="text-xs text-[#5C5C5C]">{t.changePinHint}</p>
         {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
         <Button type="submit" disabled={submitting || !canSubmit} className="w-full bg-[#1A3A5C] hover:bg-[#15304d] h-11">
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save and continue"}
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : t.changePinSubmit}
         </Button>
       </form>
     </AuthLayout>
