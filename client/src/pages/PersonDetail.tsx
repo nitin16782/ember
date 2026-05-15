@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, Briefcase, CreditCard, ClipboardCheck, FileText, History, CheckCircle2, Clock, AlertTriangle, KeyRound, IdCard } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, Briefcase, CreditCard, ClipboardCheck, FileText, History, CheckCircle2, Clock, AlertTriangle, KeyRound, IdCard, Pencil } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { useAuth, type Role } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { PersonEditDialog } from "./people/PersonEditDialog";
 
 function formatField(val: unknown): string {
   if (val === null || val === undefined) return "—";
@@ -28,6 +29,7 @@ export default function PersonDetail() {
   const id = params.id ?? "";
   const { user: currentUser } = useAuth();
   const canSetPin = currentUser ? PIN_ADMIN_ROLES.includes(currentUser.role) : false;
+  const [editing, setEditing] = useState(false);
   const { data: person, isLoading } = trpc.people.get.useQuery({ id }, { enabled: !!id });
   const { data: onboardingItems } = trpc.onboarding.list.useQuery({ personId: id }, { enabled: !!id });
   const { data: contracts } = trpc.contracts.list.useQuery({ personId: id }, { enabled: !!id });
@@ -61,9 +63,14 @@ export default function PersonDetail() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" onClick={() => setLocation("/people")} className="gap-2 -ml-2">
-        <ArrowLeft className="h-4 w-4" /> Back to Associates
-      </Button>
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" onClick={() => setLocation("/people")} className="gap-2 -ml-2">
+          <ArrowLeft className="h-4 w-4" /> Back to Associates
+        </Button>
+        <Button onClick={() => setEditing(true)} className="bg-navy hover:bg-navy/90 gap-2">
+          <Pencil className="h-4 w-4" /> Edit profile
+        </Button>
+      </div>
 
       <Card className="border-border/50">
         <CardContent className="p-6">
@@ -94,6 +101,8 @@ export default function PersonDetail() {
           </div>
         </CardContent>
       </Card>
+
+      <PersonEditDialog open={editing} onOpenChange={setEditing} person={person as any} />
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="bg-cream border border-border/50 flex-wrap h-auto gap-1 p-1">
