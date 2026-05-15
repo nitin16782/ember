@@ -1,4 +1,4 @@
-import { LOCALES, type Locale } from "@/lib/i18n/associateLogin";
+import { LOCALES, type Locale } from "@/lib/i18n/associate";
 
 export interface LanguagePickerProps {
   value: Locale;

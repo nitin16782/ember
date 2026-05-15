@@ -7,12 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { LanguagePicker } from "@/components/LanguagePicker";
-import { useLoginLocale } from "@/lib/i18n/associateLogin";
+import { useAssociateLocale } from "@/lib/i18n/associate";
 
 export default function AssociateLogin() {
   const [, setLocation] = useLocation();
   const { loginWithEmployeeCode } = useAuth();
-  const { locale, setLocale, t } = useLoginLocale();
+  const { locale, setLocale, t } = useAssociateLocale();
   const [code, setCode] = useState("");
   const [pin, setPin] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -49,8 +49,8 @@ export default function AssociateLogin() {
 
   return (
     <AuthLayout
-      title={t.title}
-      subtitle={t.subtitleEmpCode}
+      title={t.loginTitle}
+      subtitle={t.loginSubtitleEmpCode}
       footer={
         <Link href="/login" className="text-[#1A3A5C] hover:underline">{t.staffSignInLink}</Link>
       }

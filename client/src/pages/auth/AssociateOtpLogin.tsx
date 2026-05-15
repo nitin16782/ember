@@ -7,12 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { LanguagePicker } from "@/components/LanguagePicker";
-import { useLoginLocale } from "@/lib/i18n/associateLogin";
+import { useAssociateLocale } from "@/lib/i18n/associate";
 
 export default function AssociateOtpLogin() {
   const [, setLocation] = useLocation();
   const { requestOtp, loginWithOtp } = useAuth();
-  const { locale, setLocale, t } = useLoginLocale();
+  const { locale, setLocale, t } = useAssociateLocale();
   const [step, setStep] = useState<"phone" | "code">("phone");
   const [phone, setPhone] = useState("+91");
   const [code, setCode] = useState("");
@@ -54,8 +54,8 @@ export default function AssociateOtpLogin() {
 
   return (
     <AuthLayout
-      title={step === "phone" ? t.title : t.enterCodeTitle}
-      subtitle={step === "phone" ? t.subtitleOtpPhone : t.subtitleOtpCode(phone)}
+      title={step === "phone" ? t.loginTitle : t.enterCodeTitle}
+      subtitle={step === "phone" ? t.loginSubtitleOtpPhone : t.loginSubtitleOtpCode(phone)}
       footer={
         <div className="flex flex-col gap-1 text-center">
           <Link href="/login/associate" className="text-[#1A3A5C] hover:underline">{t.switchToEmpCodeLink}</Link>
