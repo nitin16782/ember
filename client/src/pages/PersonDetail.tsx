@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, Briefcase, CreditCard, ClipboardCheck, FileText, History, CheckCircle2, Clock, AlertTriangle, KeyRound } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, Briefcase, CreditCard, ClipboardCheck, FileText, History, CheckCircle2, Clock, AlertTriangle, KeyRound, IdCard } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -122,6 +122,7 @@ export default function PersonDetail() {
                 <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Employment</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
+                <InfoRow icon={IdCard} label="Employee ID" value={formatField(person.employeeCode)} mono />
                 <InfoRow icon={Calendar} label="Joining Date" value={formatField(person.joiningDate)} />
                 <InfoRow icon={Briefcase} label="Staff Type" value={formatField(person.staffType)?.replace("_", " ")} />
                 <InfoRow icon={Briefcase} label="Source" value={formatField(person.source)} />
@@ -274,13 +275,13 @@ export default function PersonDetail() {
   );
 }
 
-function InfoRow({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
+function InfoRow({ icon: Icon, label, value, mono }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-center gap-3">
       <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm truncate">{value}</p>
+        <p className={`text-sm truncate ${mono ? "font-mono" : ""}`}>{value}</p>
       </div>
     </div>
   );
