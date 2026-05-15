@@ -168,8 +168,15 @@ export function MarkSequence({
       );
       selfieKey = result.key;
     } catch (e) {
-      const stage = e instanceof SelfieUploadError ? e.stage : "unknown";
-      setSubmitError(`Selfie upload failed (${stage}). You can retry.`);
+      if (e instanceof SelfieUploadError) {
+        setSubmitError(`Selfie upload failed (${e.stage}): ${e.message}. You can retry.`);
+      } else {
+        setSubmitError(
+          `Selfie upload failed (unknown): ${e instanceof Error ? e.message : "see console"}. You can retry.`
+        );
+      }
+      // eslint-disable-next-line no-console
+      console.error("[markSequence] selfie upload error:", e);
       setStage("error");
       return;
     }
