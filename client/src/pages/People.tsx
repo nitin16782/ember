@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,13 @@ const staffTypeLabels: Record<string, string> = {
 
 export default function People() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  // Hard delete is destructive (cascade-blocks via FK anyway, but the
+  // intent is irreversible). Restrict to roles that own the data lifecycle;
+  // supervisors and property_managers manage day-to-day, not org records.
+  const canDelete = user
+    ? ["ops_lead", "central_admin", "super_admin"].includes(user.role)
+    : false;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -245,15 +253,17 @@ export default function People() {
                     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={(e) => { e.stopPropagation(); toast.info(`Deployable status check: Verifying documents, training, and background check for ${person.fullName}`); }}>
                       <Shield className="h-3.5 w-3.5 mr-1" />Deploy
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
-                      aria-label={`Delete ${person.fullName}`}
-                      onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: person.id, name: person.fullName }); }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {canDelete && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        aria-label={`Delete ${person.fullName}`}
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: person.id, name: person.fullName }); }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { eq, desc, and, gte, lte, sql, like, or, count } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, like, or, count, inArray } from "drizzle-orm";
 import { drizzle, type MySql2Database } from "drizzle-orm/mysql2";
 import { createPool, type Pool } from "mysql2/promise";
 import {
@@ -123,13 +123,16 @@ export async function getAuditLogs(opts: { entityType?: string; entityId?: strin
 }
 
 // ─── People ─────────────────────────────────────────────────────────
-export async function listPeople(opts?: { status?: string; staffType?: string; search?: string; limit?: number; offset?: number }) {
+export async function listPeople(opts?: { status?: string; staffType?: string; search?: string; limit?: number; offset?: number; callerUserId?: string; callerRole?: string }) {
   const db = await getDb();
   if (!db) return [];
+  const scope = await resolveCallerPropertyScope(opts?.callerUserId, opts?.callerRole);
+  if (scope !== null && scope.length === 0) return [];
   const conditions = [];
   if (opts?.status) conditions.push(eq(people.employmentStatus, opts.status as any));
   if (opts?.staffType) conditions.push(eq(people.staffType, opts.staffType as any));
   if (opts?.search) conditions.push(or(like(people.fullName, `%${opts.search}%`), like(people.primaryPhone, `%${opts.search}%`)));
+  if (scope !== null) conditions.push(inArray(people.homePropertyId, scope));
   const query = db.select().from(people);
   const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
   return filtered.orderBy(desc(people.createdAt)).limit(opts?.limit ?? 50).offset(opts?.offset ?? 0);
@@ -275,10 +278,15 @@ export async function deletePerson(id: string) {
   await db.delete(people).where(eq(people.id, id));
 }
 
-export async function getPeopleStats() {
+export async function getPeopleStats(opts?: { callerUserId?: string; callerRole?: string }) {
   const db = await getDb();
   if (!db) return { total: 0, active: 0, onLeave: 0, exited: 0 };
-  const rows = await db.select({ status: people.employmentStatus, cnt: count() }).from(people).groupBy(people.employmentStatus);
+  const scope = await resolveCallerPropertyScope(opts?.callerUserId, opts?.callerRole);
+  if (scope !== null && scope.length === 0) return { total: 0, active: 0, onLeave: 0, exited: 0, absconding: 0 };
+  const query = db.select({ status: people.employmentStatus, cnt: count() }).from(people);
+  const rows = await (scope !== null
+    ? query.where(inArray(people.homePropertyId, scope)).groupBy(people.employmentStatus)
+    : query.groupBy(people.employmentStatus));
   const stats = { total: 0, active: 0, onLeave: 0, exited: 0, absconding: 0 };
   rows.forEach((r) => {
     const c = Number(r.cnt);
@@ -292,12 +300,40 @@ export async function getPeopleStats() {
 }
 
 // ─── Properties ─────────────────────────────────────────────────────
-export async function listProperties(opts?: { status?: string; search?: string; limit?: number; offset?: number }) {
+// Roles that see all properties / people / org-wide data. Supervisor and
+// property_manager are scoped to their own active assignments via the
+// people→assignments→propertyId path. Mirrors GLOBAL_ROLES in attendance.ts.
+const GLOBAL_SCOPE_ROLES = new Set(["ops_lead", "central_admin", "super_admin"]);
+
+/**
+ * Resolve the propertyIds a caller can see. Returns:
+ *   - null  → caller is global, no scoping needed (caller sees everything)
+ *   - []    → caller is scoped but has no assignments (caller sees nothing)
+ *   - [...] → caller is scoped to these property IDs
+ */
+async function resolveCallerPropertyScope(callerUserId?: string, callerRole?: string): Promise<string[] | null> {
+  if (!callerRole || GLOBAL_SCOPE_ROLES.has(callerRole)) return null;
+  if (!callerUserId) return [];
   const db = await getDb();
   if (!db) return [];
+  const [callerPerson] = await db.select({ id: people.id })
+    .from(people).where(eq(people.userId, callerUserId)).limit(1);
+  if (!callerPerson) return [];
+  const rows = await db.select({ propertyId: assignments.propertyId })
+    .from(assignments)
+    .where(and(eq(assignments.personId, callerPerson.id), eq(assignments.status, "active")));
+  return Array.from(new Set(rows.map((r) => r.propertyId)));
+}
+
+export async function listProperties(opts?: { status?: string; search?: string; limit?: number; offset?: number; callerUserId?: string; callerRole?: string }) {
+  const db = await getDb();
+  if (!db) return [];
+  const scope = await resolveCallerPropertyScope(opts?.callerUserId, opts?.callerRole);
+  if (scope !== null && scope.length === 0) return [];
   const conditions = [];
   if (opts?.status) conditions.push(eq(properties.status, opts.status as any));
   if (opts?.search) conditions.push(or(like(properties.name, `%${opts.search}%`), like(properties.city, `%${opts.search}%`)));
+  if (scope !== null) conditions.push(inArray(properties.id, scope));
   const query = db.select().from(properties);
   const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
   return filtered.orderBy(desc(properties.createdAt)).limit(opts?.limit ?? 50).offset(opts?.offset ?? 0);
@@ -324,10 +360,15 @@ export async function updateProperty(id: string, data: any) {
   await db.update(properties).set(data).where(eq(properties.id, id));
 }
 
-export async function getPropertyStats() {
+export async function getPropertyStats(opts?: { callerUserId?: string; callerRole?: string }) {
   const db = await getDb();
   if (!db) return { total: 0, live: 0, onboarding: 0, paused: 0, churned: 0 };
-  const rows = await db.select({ status: properties.status, cnt: count() }).from(properties).groupBy(properties.status);
+  const scope = await resolveCallerPropertyScope(opts?.callerUserId, opts?.callerRole);
+  if (scope !== null && scope.length === 0) return { total: 0, live: 0, onboarding: 0, paused: 0, churned: 0 };
+  const query = db.select({ status: properties.status, cnt: count() }).from(properties);
+  const rows = await (scope !== null
+    ? query.where(inArray(properties.id, scope)).groupBy(properties.status)
+    : query.groupBy(properties.status));
   const stats = { total: 0, live: 0, onboarding: 0, paused: 0, churned: 0 };
   rows.forEach((r) => {
     const c = Number(r.cnt);
@@ -864,23 +905,44 @@ export async function createRequest(data: any) {
 }
 
 // ─── Dashboard Stats ────────────────────────────────────────────────
-export async function getDashboardStats() {
+export async function getDashboardStats(opts?: { callerUserId?: string; callerRole?: string }) {
   const db = await getDb();
   if (!db) return { people: { total: 0, active: 0 }, properties: { total: 0, live: 0 }, expenses: { pending: 0 }, leaves: { pending: 0 } };
 
   const [peopleStats, propStats] = await Promise.all([
-    getPeopleStats(),
-    getPropertyStats(),
+    getPeopleStats(opts),
+    getPropertyStats(opts),
   ]);
 
-  const pendingExpenses = await db.select({ cnt: count() }).from(expenses).where(eq(expenses.approvalStatus, "pending"));
-  const pendingLeaves = await db.select({ cnt: count() }).from(leaveApplications).where(eq(leaveApplications.status, "pending"));
+  const scope = await resolveCallerPropertyScope(opts?.callerUserId, opts?.callerRole);
+  // Scoped expense/leave counts. For expenses we filter by propertyId
+  // directly; for leaves we filter by person.homePropertyId via a subquery.
+  let pendingExpensesCnt = 0;
+  let pendingLeavesCnt = 0;
+  if (scope === null) {
+    const [pe] = await db.select({ cnt: count() }).from(expenses).where(eq(expenses.approvalStatus, "pending"));
+    pendingExpensesCnt = Number(pe?.cnt ?? 0);
+    const [pl] = await db.select({ cnt: count() }).from(leaveApplications).where(eq(leaveApplications.status, "pending"));
+    pendingLeavesCnt = Number(pl?.cnt ?? 0);
+  } else if (scope.length > 0) {
+    const [pe] = await db.select({ cnt: count() }).from(expenses)
+      .where(and(eq(expenses.approvalStatus, "pending"), inArray(expenses.propertyId, scope)));
+    pendingExpensesCnt = Number(pe?.cnt ?? 0);
+    const scopedPeople = await db.select({ id: people.id }).from(people)
+      .where(inArray(people.homePropertyId, scope));
+    const scopedPersonIds = scopedPeople.map((p) => p.id);
+    if (scopedPersonIds.length > 0) {
+      const [pl] = await db.select({ cnt: count() }).from(leaveApplications)
+        .where(and(eq(leaveApplications.status, "pending"), inArray(leaveApplications.personId, scopedPersonIds)));
+      pendingLeavesCnt = Number(pl?.cnt ?? 0);
+    }
+  }
 
   return {
     people: peopleStats,
     properties: propStats,
-    expenses: { pending: Number(pendingExpenses[0]?.cnt ?? 0) },
-    leaves: { pending: Number(pendingLeaves[0]?.cnt ?? 0) },
+    expenses: { pending: pendingExpensesCnt },
+    leaves: { pending: pendingLeavesCnt },
   };
 }
 

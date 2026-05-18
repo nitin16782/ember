@@ -21,8 +21,8 @@ export const appRouter = router({
 
   // ─── Dashboard ──────────────────────────────────────────────────
   dashboard: router({
-    stats: protectedProcedure.query(async () => {
-      return db.getDashboardStats();
+    stats: protectedProcedure.query(async ({ ctx }) => {
+      return db.getDashboardStats({ callerUserId: ctx.user.id, callerRole: ctx.user.role });
     }),
   }),
 
@@ -30,7 +30,7 @@ export const appRouter = router({
   people: router({
     list: protectedProcedure
       .input(z.object({ status: z.string().optional(), staffType: z.string().optional(), search: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional())
-      .query(async ({ input }) => db.listPeople(input ?? {})),
+      .query(async ({ input, ctx }) => db.listPeople({ ...(input ?? {}), callerUserId: ctx.user.id, callerRole: ctx.user.role })),
     get: protectedProcedure
       .input(z.object({ id }))
       .query(async ({ input }) => db.getPersonById(input.id)),
@@ -107,14 +107,14 @@ export const appRouter = router({
         });
         return { success: true };
       }),
-    stats: protectedProcedure.query(async () => db.getPeopleStats()),
+    stats: protectedProcedure.query(async ({ ctx }) => db.getPeopleStats({ callerUserId: ctx.user.id, callerRole: ctx.user.role })),
   }),
 
   // ─── Properties ─────────────────────────────────────────────────
   properties: router({
     list: protectedProcedure
       .input(z.object({ status: z.string().optional(), search: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional())
-      .query(async ({ input }) => db.listProperties(input ?? {})),
+      .query(async ({ input, ctx }) => db.listProperties({ ...(input ?? {}), callerUserId: ctx.user.id, callerRole: ctx.user.role })),
     get: protectedProcedure
       .input(z.object({ id }))
       .query(async ({ input }) => db.getPropertyById(input.id)),
