@@ -371,9 +371,37 @@ export async function listAssignments(opts?: { propertyId?: string; personId?: s
 export async function createAssignment(data: any) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  // Reject duplicates: an active assignment with the same (personId,
+  // propertyId, roleCode) tuple already exists. The pilot exposed this —
+  // operators could re-add the same associate to a property repeatedly
+  // because there was no schema-level or app-level guard. We check in
+  // app code because the schema doesn't have a UNIQUE constraint on
+  // (personId, propertyId, roleCode, status).
+  const dupe = await db.select({ id: assignments.id }).from(assignments)
+    .where(and(
+      eq(assignments.personId, data.personId),
+      eq(assignments.propertyId, data.propertyId),
+      eq(assignments.roleCode, data.roleCode),
+      eq(assignments.status, "active"),
+    ))
+    .limit(1);
+  if (dupe.length > 0) {
+    const err: any = new Error("DUPLICATE_ASSIGNMENT");
+    err.code = "DUPLICATE_ASSIGNMENT";
+    throw err;
+  }
   const id = data.id ?? newId();
   await db.insert(assignments).values({ ...data, id });
   return id;
+}
+
+export async function endAssignment(id: string, endDate?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const today = endDate ?? new Date().toISOString().slice(0, 10);
+  await db.update(assignments)
+    .set({ status: "ended", endDate: today as any })
+    .where(eq(assignments.id, id));
 }
 
 // ─── Attendance ─────────────────────────────────────────────────────
