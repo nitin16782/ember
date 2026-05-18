@@ -21,8 +21,13 @@ export default function AssociateLogin() {
   // Accept "42", "EMP-42", "emp 42" — normalise on submit. The server
   // upper-cases and trims too, but doing it here lets the disabled-
   // submit gate behave intuitively.
+  //
+  // Two coexisting code conventions:
+  //   - legacy: short numeric (≤4 digits) auto-padded into `EMP-NNNN`
+  //   - pilot/onwards: long bare digit IDs from id_card_number (up to
+  //     16 chars to match the people.employeeCode column width)
   const normalizedCode = code.trim().toUpperCase();
-  const codeOk = /^EMP-\d{1,8}$/.test(normalizedCode) || /^\d{1,8}$/.test(normalizedCode);
+  const codeOk = /^EMP-\d{1,12}$/.test(normalizedCode) || /^\d{1,16}$/.test(normalizedCode);
   const pinOk = /^\d{6}$/.test(pin);
 
   async function submit(e: React.FormEvent) {
@@ -33,9 +38,17 @@ export default function AssociateLogin() {
 
     setSubmitting(true);
     try {
-      const finalCode = normalizedCode.startsWith("EMP-")
-        ? normalizedCode
-        : `EMP-${normalizedCode.padStart(4, "0")}`;
+      // Pass long bare digit IDs through as-is (pilot natural keys like
+      // `125260020`). Only zero-pad short legacy numeric input into the
+      // `EMP-NNNN` form so existing legacy users still work.
+      let finalCode: string;
+      if (normalizedCode.startsWith("EMP-")) {
+        finalCode = normalizedCode;
+      } else if (normalizedCode.length <= 4) {
+        finalCode = `EMP-${normalizedCode.padStart(4, "0")}`;
+      } else {
+        finalCode = normalizedCode;
+      }
       const { mustChangePin } = await loginWithEmployeeCode(finalCode, pin);
       if (mustChangePin) {
         setLocation("/auth/change-pin");
