@@ -3,12 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Building2, MapPin, BedDouble, Bath, Ruler, Pencil, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, Building2, MapPin, BedDouble, Bath, Ruler, Pencil, UserPlus, Users, UserMinus } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemo, useState } from "react";
 import { PropertyEditDialog } from "./properties/PropertyEditDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -130,10 +131,21 @@ const SHIFT_OPTIONS: { value: "morning" | "evening" | "full_day" | "night" | "24
 
 function StaffTab({ propertyId, propertyName }: { propertyId: string; propertyName: string }) {
   const [open, setOpen] = useState(false);
+  const [endTarget, setEndTarget] = useState<{ id: string; name: string } | null>(null);
+  const utils = trpc.useUtils();
   const { data: rows, isLoading } = trpc.assignments.list.useQuery({ propertyId, status: "active" });
   // server-side listPeople defaults to limit=50; raise it so personId → person
   // resolution on the property staff tab covers the full active workforce.
   const { data: peopleRows } = trpc.people.list.useQuery({ limit: 500 });
+
+  const endMutation = trpc.assignments.end.useMutation({
+    onSuccess: () => {
+      utils.assignments.list.invalidate({ propertyId, status: "active" });
+      toast.success("Assignment ended");
+      setEndTarget(null);
+    },
+    onError: (err) => toast.error(err.message ?? "Could not end assignment"),
+  });
 
   const personById = useMemo(() => {
     const m = new Map<string, { fullName: string; designation?: string | null; primaryPhone?: string | null; employeeCode?: string | null }>();
@@ -183,8 +195,18 @@ function StaffTab({ propertyId, propertyName }: { propertyId: string; propertyNa
                         </div>
                       </div>
                     </div>
-                    <div className="text-xs text-muted-foreground shrink-0">
-                      From {a.startDate ? String(a.startDate) : "—"}
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-xs text-muted-foreground">
+                        From {a.startDate ? String(a.startDate) : "—"}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 gap-1.5"
+                        onClick={() => setEndTarget({ id: a.id, name: person?.fullName ?? "this person" })}
+                      >
+                        <UserMinus className="h-4 w-4" /> End
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -209,6 +231,27 @@ function StaffTab({ propertyId, propertyName }: { propertyId: string; propertyNa
         propertyName={propertyName}
         people={peopleRows ?? []}
       />
+
+      <AlertDialog open={!!endTarget} onOpenChange={(o) => { if (!o) setEndTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-navy">End assignment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {endTarget?.name} will no longer be assigned to {propertyName}. Past attendance, contracts, and audit records are preserved — only the active assignment is closed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={endMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              disabled={endMutation.isPending}
+              onClick={(e) => { e.preventDefault(); if (endTarget) endMutation.mutate({ id: endTarget.id }); }}
+            >
+              {endMutation.isPending ? "Ending…" : "End assignment"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

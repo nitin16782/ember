@@ -196,9 +196,35 @@ export const appRouter = router({
         assignmentType: z.enum(["permanent", "temporary", "transfer"]).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const newId = await db.createAssignment(input);
-        await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "assignment", entityId: newId, afterValue: input });
-        return { id: newId };
+        try {
+          const newId = await db.createAssignment(input);
+          await db.writeAuditLog({ actorId: ctx.user.id, actorRole: ctx.user.role, action: "create", entityType: "assignment", entityId: newId, afterValue: input });
+          return { id: newId };
+        } catch (err: any) {
+          if (err?.code === "DUPLICATE_ASSIGNMENT") {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "This person is already assigned to this property with this role. End the existing assignment first if you need to change it.",
+            });
+          }
+          throw err;
+        }
+      }),
+    end: protectedProcedure
+      .input(z.object({ id, endDate: z.string().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const before = await db.listAssignments({}).then(rows => rows.find((r: any) => r.id === input.id));
+        await db.endAssignment(input.id, input.endDate);
+        await db.writeAuditLog({
+          actorId: ctx.user.id,
+          actorRole: ctx.user.role,
+          action: "end",
+          entityType: "assignment",
+          entityId: input.id,
+          beforeValue: before,
+          afterValue: { status: "ended", endDate: input.endDate ?? new Date().toISOString().slice(0, 10) },
+        });
+        return { success: true };
       }),
   }),
 
