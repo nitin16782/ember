@@ -65,6 +65,12 @@ const menuGroups: MenuGroup[] = [
       { icon: LayoutDashboard, label: "Dashboard", path: "/" },
       {
         icon: Clock,
+        label: "Mark my attendance",
+        path: "/associate/attendance",
+        roles: ["supervisor"],
+      },
+      {
+        icon: Clock,
         label: "Today's roster",
         path: "/attendance/today",
         roles: SUPERVISOR_ROLES,

@@ -111,9 +111,11 @@ function Router() {
         <Redirect to="/portal" />
       </Route>
 
-      {/* Associate mobile area — role-gated to "associate" */}
+      {/* Associate mobile area — also reachable by field supervisors who
+          self-mark on the same on-site UI. Their `users.role` is
+          'supervisor' but they're physically deployed at properties. */}
       <Route path="/associate/:rest*">
-        <RequireAuth allowedRoles={["associate"]} loginPath="/login/associate">
+        <RequireAuth allowedRoles={["associate", "supervisor"]} loginPath="/login/associate">
           <AssociateLayout>
             <Suspense fallback={<PageLoader />}>
               <Switch>
