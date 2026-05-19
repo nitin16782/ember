@@ -6,6 +6,7 @@ import {
   idCardExpiryJob,
   referralMilestonesJob,
   abscondingDetectionJob,
+  autoCloseShiftsJob,
 } from "../scheduled/handlers";
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -217,6 +218,13 @@ export function registerAllJobs(): void {
     cron: "0 4 * * *",                   // daily 04:00 IST
     handler: abscondingDetectionJob,
     description: "Flag associates with attendance gaps; escalate per threshold",
+  });
+
+  registerJob({
+    name: "autoCloseShifts",
+    cron: "59 23 * * *",                 // daily 23:59 IST
+    handler: autoCloseShiftsJob,
+    description: "Auto-close shift_events left open at end-of-day (no check-out)",
   });
 
   console.log(`[cron] all jobs registered (${registry.size} total)`);

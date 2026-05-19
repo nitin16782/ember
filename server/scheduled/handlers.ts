@@ -11,9 +11,10 @@
  *   3. abscondingDetection — daily check for associates absent without leave
  */
 
-import { eq, lt, and, sql, isNull } from "drizzle-orm";
+import { eq, lt, and, sql, isNull, desc } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { getDb } from "../db";
-import { idCards, referrals, shiftEvents, people, leaveApplications } from "../../drizzle/schema";
+import { idCards, referrals, shiftEvents, people, leaveApplications, attendanceAuditLog } from "../../drizzle/schema";
 
 // ─── Pure job functions ─────────────────────────────────────────────
 
@@ -185,6 +186,99 @@ export async function abscondingDetectionJob(): Promise<{
 
   console.log(`[Scheduled] Absconding Detection: ${flagged.length} associates flagged`);
   return { flaggedCount: flagged.length, flagged };
+}
+
+/**
+ * Auto-close shifts left open at end-of-day.
+ *
+ * People who forget to check out leave their last shift_event as
+ * `check_in`, which blocks the next day's check-in with the
+ * "already_checked_in" engine code. Once per day (cron: 59 23 * * *)
+ * we find every person whose most recent shift event is `check_in`
+ * and insert a `check_out` at 23:59:59 of the day they checked in.
+ *
+ * Marking:
+ *   - markMode = "imported" (no new enum value; avoids a migration)
+ *   - notes prefix `[AUTO_CLOSE]` so a single LIKE query surfaces
+ *     all rows and the UI can render an "auto-closed" badge later
+ *
+ * Idempotent: only acts on people whose latest event is still
+ * `check_in`. Re-running closes nothing if everyone is checked out.
+ */
+export async function autoCloseShiftsJob(): Promise<{
+  closedCount: number;
+  closed: Array<{ personId: string; checkInAt: string; closedAt: string }>;
+  errors: string[];
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  // Latest shift event per active person. Group-by + max occurredAt.
+  const activePeople = await db
+    .select({ id: people.id })
+    .from(people)
+    .where(eq(people.employmentStatus, "active"));
+
+  const closed: Array<{ personId: string; checkInAt: string; closedAt: string }> = [];
+  const errors: string[] = [];
+
+  for (const p of activePeople) {
+    try {
+      const [latest] = await db
+        .select()
+        .from(shiftEvents)
+        .where(eq(shiftEvents.personId, p.id))
+        .orderBy(desc(shiftEvents.occurredAt))
+        .limit(1);
+      if (!latest || latest.eventType !== "check_in") continue;
+
+      // Close at 23:59:59 of the day the person checked in. If the
+      // check-in is from an earlier day (multi-day open shift), this
+      // still anchors the close to the correct date so daily summaries
+      // compute the right hours.
+      const checkInAt = new Date(latest.occurredAt);
+      const closeAt = new Date(checkInAt);
+      closeAt.setHours(23, 59, 59, 0);
+
+      await db.insert(shiftEvents).values({
+        id: randomUUID(),
+        personId: p.id,
+        propertyId: latest.propertyId,
+        eventType: "check_out",
+        occurredAt: closeAt,
+        markMode: "imported",
+        markedBy: latest.markedBy,
+        gpsLat: null,
+        gpsLng: null,
+        withinGeofence: null,
+        geofenceDistanceM: null,
+        selfieUrl: null,
+        selfieKey: null,
+        notes: "[AUTO_CLOSE] No check-out recorded; auto-closed at 23:59",
+      });
+
+      // Audit so the chain is traceable end-to-end.
+      await db.insert(attendanceAuditLog).values({
+        id: randomUUID(),
+        actorUserId: latest.markedBy,
+        actorRole: "system",
+        action: "mark_event",
+        targetPersonId: p.id,
+        payload: { reason: "auto_close", checkInAt: checkInAt.toISOString(), closeAt: closeAt.toISOString() } as any,
+      });
+
+      closed.push({
+        personId: p.id,
+        checkInAt: checkInAt.toISOString(),
+        closedAt: closeAt.toISOString(),
+      });
+    } catch (err) {
+      errors.push(`${p.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  console.log(`[Scheduled] Auto-close shifts: ${closed.length} closed, ${errors.length} errors`);
+  return { closedCount: closed.length, closed, errors };
 }
 
 // HTTP triggers are built by scheduler.buildHttpTrigger and mounted in
