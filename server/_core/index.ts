@@ -58,6 +58,7 @@ async function startServer() {
   app.post("/api/scheduled/idCardExpiry", buildHttpTrigger("idCardExpiry"));
   app.post("/api/scheduled/referralMilestones", buildHttpTrigger("referralMilestones"));
   app.post("/api/scheduled/abscondingDetection", buildHttpTrigger("abscondingDetection"));
+  app.post("/api/scheduled/autoCloseShifts", buildHttpTrigger("autoCloseShifts"));
 
   // Cron status — gated on the shared secret (operators / monitoring)
   app.get("/api/internal/cron/status", (req, res) => {
