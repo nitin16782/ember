@@ -1616,15 +1616,22 @@ const legacyList = protectedProcedure
       })
       .optional()
   )
-  .query(async ({ input }) => {
+  .query(async ({ input, ctx }) => {
     const db = await getDb();
     if (!db) return [];
     const opts = input ?? {};
+    // Scope shift_events to the caller's assigned property → people set, so
+    // PMs / supervisors don't see global attendance and the personId → name
+    // resolution on the Attendance page covers every visible event. Global
+    // roles (ops_lead, central_admin, super_admin) still see everything.
+    const scope = await resolveScopeProperties(ctx.user.id, ctx.user.role, undefined);
+    if (scope !== null && scope.length === 0) return [];
     const conditions = [];
     if (opts.personId) conditions.push(eq(shiftEvents.personId, opts.personId));
     if (opts.propertyId) conditions.push(eq(shiftEvents.propertyId, opts.propertyId));
     if (opts.from) conditions.push(gte(shiftEvents.occurredAt, opts.from));
     if (opts.to) conditions.push(lte(shiftEvents.occurredAt, opts.to));
+    if (scope !== null) conditions.push(inArray(shiftEvents.propertyId, scope));
     const base = db.select().from(shiftEvents);
     const q = conditions.length ? base.where(and(...conditions)) : base;
     return q.orderBy(desc(shiftEvents.occurredAt)).limit(opts.limit ?? 200);
