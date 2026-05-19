@@ -49,7 +49,7 @@ export function UserDialog({
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [role, setRole] = useState<RoleValue>("associate");
+  const [role, setRole] = useState<RoleValue>("property_manager");
   const [isActive, setIsActive] = useState(true);
   const [sendMagicLink, setSendMagicLink] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +73,7 @@ export function UserDialog({
       setEmail("");
       setName("");
       setPhone("");
-      setRole("associate");
+      setRole("property_manager");
       setIsActive(true);
       setSendMagicLink(true);
     }
@@ -204,11 +204,17 @@ export function UserDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ROLE_OPTIONS.map((r) => (
-                  <SelectItem key={r.value} value={r.value}>
-                    {r.label}
-                  </SelectItem>
-                ))}
+                {ROLE_OPTIONS
+                  // Associates are provisioned automatically via the
+                  // Associates page (createPerson → provisionUserForPerson).
+                  // Creating them from here strands them without a `people`
+                  // row, so the server also rejects role=associate here.
+                  .filter((r) => isEdit || r.value !== "associate")
+                  .map((r) => (
+                    <SelectItem key={r.value} value={r.value}>
+                      {r.label}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
             {isEdit && isSelf && user?.role === "super_admin" && (

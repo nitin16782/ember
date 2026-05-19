@@ -122,12 +122,20 @@ const createUser = rolesProcedure(...ADMIN_ROLES)
     const email = input.email.trim().toLowerCase();
     const phone = input.phone?.replace(/\s/g, "") || null;
 
-    if (input.role === "associate" && !phone) {
+    // Associates must go through the Associates page, which calls
+    // createPerson → provisionUserForPerson and also writes the
+    // people row. Creating a bare users row from here strands them
+    // with no person record, so attendance / payroll all break. This
+    // exact misuse surfaced in the pilot — Umar Shaikh's lockout
+    // pushed operators into the Add User flow as a workaround.
+    if (input.role === "associate") {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: "Associate users must have a phone number for OTP login",
+        message: "Add associates from the Associates page — a user account is provisioned automatically. If the associate is locked out, open their profile and click 'Set PIN' (this clears the lock).",
       });
     }
+
+    // (Associate-role rejection handled above; remaining flow is staff-only.)
 
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -154,7 +162,7 @@ const createUser = rolesProcedure(...ADMIN_ROLES)
     });
 
     let magicLinkSent = false;
-    if (input.sendMagicLink && input.role !== "associate") {
+    if (input.sendMagicLink) {
       try {
         const { token } = await generateMagicLink(id, "first_login_setup");
         const base = ENV.isProduction ? `https://${ENV.staffHostname}` : "http://localhost:3000";
