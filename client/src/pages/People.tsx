@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Users, Phone, Mail, ChevronRight, Upload, Shield, Trash2 } from "lucide-react";
+import { Plus, Search, Users, Phone, Mail, ChevronRight, Upload, Shield, Trash2, KeyRound } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -37,6 +37,24 @@ export default function People() {
   const canDelete = user
     ? ["ops_lead", "central_admin", "super_admin"].includes(user.role)
     : false;
+  // Same admin gate as "Set PIN" on PersonDetail.tsx (matches the server-side
+  // rolesProcedure on auth.setAssociatePin). Surface it on the list row too
+  // so the lockout-recovery flow doesn't require drilling into PersonDetail.
+  const canResetPin = canDelete;
+  const [resetPinTarget, setResetPinTarget] = useState<{ id: string; name: string } | null>(null);
+  const [pinInput, setPinInput] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const resetPinMut = trpc.auth.setAssociatePin.useMutation({
+    onSuccess: () => {
+      toast.success(`PIN reset for ${resetPinTarget?.name}. Lockout cleared. Share the new PIN privately.`);
+      setResetPinTarget(null);
+      setPinInput("");
+      setPinConfirm("");
+      setPinError(null);
+    },
+    onError: (err) => setPinError(err.message ?? "Could not reset PIN"),
+  });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -253,6 +271,18 @@ export default function People() {
                     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={(e) => { e.stopPropagation(); toast.info(`Deployable status check: Verifying documents, training, and background check for ${person.fullName}`); }}>
                       <Shield className="h-3.5 w-3.5 mr-1" />Deploy
                     </Button>
+                    {canResetPin && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                        aria-label={`Reset PIN for ${person.fullName}`}
+                        title="Reset PIN (also clears the 15-min lockout)"
+                        onClick={(e) => { e.stopPropagation(); setResetPinTarget({ id: person.id, name: person.fullName }); setPinInput(""); setPinConfirm(""); setPinError(null); }}
+                      >
+                        <KeyRound className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     {canDelete && (
                       <Button
                         size="sm"
@@ -301,6 +331,54 @@ export default function People() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!resetPinTarget} onOpenChange={(o) => { if (!o) { setResetPinTarget(null); setPinError(null); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-display text-navy">Reset PIN for {resetPinTarget?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-2">
+            Sets a new 6-digit PIN and clears any 15-minute lockout from failed sign-in attempts.
+            The associate will be asked to change it on first sign-in. Share the new PIN privately.
+          </p>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="resetPinNew">Temporary PIN (6 digits)</Label>
+              <Input
+                id="resetPinNew" type="text" inputMode="numeric" maxLength={6} pattern="\d{6}"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
+                className="text-center text-2xl tracking-[0.4em] font-['Consolas',monospace]"
+                autoFocus
+              />
+            </div>
+            <div>
+              <Label htmlFor="resetPinConfirm">Confirm</Label>
+              <Input
+                id="resetPinConfirm" type="text" inputMode="numeric" maxLength={6} pattern="\d{6}"
+                value={pinConfirm}
+                onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ""))}
+                className="text-center text-2xl tracking-[0.4em] font-['Consolas',monospace]"
+              />
+            </div>
+            {pinError && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{pinError}</div>}
+          </div>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" onClick={() => setResetPinTarget(null)} disabled={resetPinMut.isPending}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!/^\d{6}$/.test(pinInput)) { setPinError("PIN must be 6 digits"); return; }
+                if (pinInput !== pinConfirm) { setPinError("PINs don't match"); return; }
+                if (resetPinTarget) resetPinMut.mutate({ personId: resetPinTarget.id, pin: pinInput });
+              }}
+              disabled={resetPinMut.isPending}
+              className="bg-[#1A3A5C] hover:bg-[#15304d]"
+            >
+              {resetPinMut.isPending ? "Saving…" : "Reset PIN"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
